@@ -1,0 +1,10 @@
+fastapi[standard]
+sqlalchemy
+uvicorn[standard]
+celery
+pydantic
+passlib[bcrypt]
+PyJWT
+python-dotenv
+requests
+psycopg2
