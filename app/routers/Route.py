@@ -1,17 +1,16 @@
+from typing import List
+
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
-
 
 from app.models.Database import SessionLocal, engine, get_db
 from app.models.Route import Route
 from app.models.RouteStop import RouteStop
 
-
-from typing import List
-
-
 from app.schemas.route import RouteOut
 from app.schemas.route import StopPerRoute
+
+
 router = APIRouter(prefix="/route", tags=["Route"])
 
 
@@ -22,6 +21,8 @@ def get_routes(db: Session = Depends(get_db)):
     return routes # pydantic convert to sql object
 
 
+
+#GET /route/routes - Fetch all stops along a route using {route_id}
 @router.get("/routes/{route_id}/stops", response_model=List[StopPerRoute])
 def get_stops_per_route(route_id: str, db: Session = Depends(get_db)):
     route_stops = (
