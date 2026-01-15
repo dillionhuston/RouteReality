@@ -4,26 +4,33 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.Database import SessionLocal, engine, get_db
-from app.models.Route import Route
+from app.models.BusRoute import Route
+from app.models.Stop import Stop
 from app.models.RouteStop import RouteStop
-
+from app.schemas.route import StopsPerRoute
 from app.schemas.route import RouteOut
-from app.schemas.route import StopPerRoute
 
 
 router = APIRouter(prefix="/route", tags=["Route"])
 
 
 # GET /route/routes - Retrieve all routes
-@router.get("/routes", response_model=List[RouteOut])  
+# change shcema to routes again this is for testing, i will forget
+@router.get("/routes", response_model=List[RouteOut])
 def get_routes(db: Session = Depends(get_db)):
-    routes = db.query(Route).all()
-    return routes # pydantic convert to sql object
 
+    route = db.query(Route).all()  
+    return [
+        {
+            "id": route.id,
+            "name": route.name
+        }
+        for stop in route
+    ]
 
 
 #GET /route/routes - Fetch all stops along a route using {route_id}
-@router.get("/routes/{route_id}/stops", response_model=List[StopPerRoute])
+@router.get("/routes/{route_id}/stops", response_model=List[StopsPerRoute])
 def get_stops_per_route(route_id: str, db: Session = Depends(get_db)):
     route_stops = (
         db.query(RouteStop)
@@ -36,5 +43,9 @@ def get_stops_per_route(route_id: str, db: Session = Depends(get_db)):
     if not route_stops:
         raise HTTPException(status_code=404, detail="No stops found for this route")
 
-    #just let pydantic do all the wor
-    return route_stops
+    return [
+
+        { "id": route_stops.id,
+        "name": route_stops.id
+        }
+    ]

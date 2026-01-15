@@ -10,3 +10,7 @@ class RouteOut(BaseModel):
         from_attributes = True 
 
 
+class StopsPerRoute(BaseModel):
+    id: str
+    name:str
+

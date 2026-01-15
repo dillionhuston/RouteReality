@@ -6,7 +6,7 @@ from typing import Optional
 class StopPerRoute(BaseModel):
     id: str
     name: str
-    order: int = Field(alias="sequence")
+    #order: int = Field(alias="sequence")
 
     class Config:
         from_attributes = True

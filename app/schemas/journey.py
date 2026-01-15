@@ -2,6 +2,15 @@ from pydantic import BaseModel, datetime_parse
 from datetime import datetime
 
 
+
+class JourneyEventType():
+
+    EVENT_TYPE_ARRIVED =  "ARRIVED"
+    EVENT_TYPE_STOP_REACHED = "STOP_REACHED"
+    EVENT_TYPE_DELAYED = "DELAYED"
+    
+
+
 class StartJourney(BaseModel):
 
     route_id: str
@@ -9,9 +18,9 @@ class StartJourney(BaseModel):
     end_stop_id: str
 
 
-class JourneyEventType():
 
-    EVENT_TYPE_ARRIVED =  "ARRIVED"
-    EVENT_TYPE_STOP_REACHED = "STOP_REACHED"
-    EVENT_TYPE_DELAYED = "DELAYED"
+class AddJourneyEvent(BaseModel):
+    event: str
+
+
 

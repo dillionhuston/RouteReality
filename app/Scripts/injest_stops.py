@@ -6,7 +6,7 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from app.models.Stop import Stop
-from app.models.Route import Route
+from app.models.BusRoute import Route
 from app.models.RouteStop import RouteStop 
 from app.models.Database import engine, SessionLocal
 from app.models.base import Base
