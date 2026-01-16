@@ -3,7 +3,7 @@ from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.Journey import Journey
-from app.schemas.journey import StartJourney
+from app.schemas.journey import StartJourney, JourneyEventType
 
 from app.Services.Prediction.prediction import PredictionService
 
@@ -14,11 +14,12 @@ from uuid import UUID
 class JourneyService:
     @staticmethod
     def start_journey(data: StartJourney, db: Session) -> Journey:
+        """Create journey and add it to database. Returns journey data"""
         start_time = datetime.now(timezone.utc)
         predicted_arrival, predicted_status = PredictionService.predict_journey(
             db=db,
             route_id = data.route_id,
-            start_time= data.s
+            start_time=start_time
         )
 
         journey = Journey(
@@ -26,8 +27,8 @@ class JourneyService:
             route_id=data.route_id,
             start_stop_id=data.start_stop_id,
             end_stop_id=data.end_stop_id,
-            start_time=None,
-            status="ACTIVE",
+            start_time=None, #We change once bus arrives
+            status=JourneyEventType.EVENT_TYPE_STARTED,
             created_at=datetime.now(timezone.utc),
             predicted_status=predicted_status,
             predicted_arrival=predicted_arrival.strftime("%Y-%m-%d %H:%M:%S")
@@ -35,6 +36,7 @@ class JourneyService:
         db.add(journey)
         db.commit()
         db.refresh(journey)
+
         return journey
 
     @staticmethod
@@ -54,4 +56,11 @@ class JourneyService:
                 status_code=404,
                 detail=f"Active journey not found for id: {journey_id}"
             )
-        return journey
+        return [{
+            "journey_id": journey.id,
+            "status": journey.status,
+            "end_time": journey.end_time
+
+        } 
+        for j in journey
+        ]

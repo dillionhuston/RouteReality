@@ -1,3 +1,7 @@
+#TODO Seperate into own folder with one main service handler, and seperate files for each event type
+
+
+from datetime import  datetime, timezone
 from uuid import UUID
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -14,17 +18,24 @@ logger = logger.get_logger(__name__)
 class JourneyEventHandler:
     @staticmethod
     def arrived(journey_id: UUID, db: Session) -> Journey:
+        """ Set user active journey status to arrived"""
+
+        # Only allow the user to set their journey as arrived if the journey has started
+        # Also allow to set as arrived if the bus has been delayed beforehand
+
+        allowed = {"STARTED", "DELAYED"}
         journey = db.get(Journey, journey_id)
+
         if not journey:
             logger.error(f"Journey not found: {journey_id}")
             raise HTTPException(404, f"Journey {journey_id} not found")
 
-        allowed = {"ACTIVE", "DELAYED"}
         if journey.status not in allowed:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot mark as ARRIVED from status: {journey.status}"
             )
+        
         journey.status = "ARRIVED"
         journey.start_time = datetime.now(timezone.utc)  
         db.commit()
@@ -34,11 +45,13 @@ class JourneyEventHandler:
 
     @staticmethod
     def delayed(journey_id: UUID, db: Session) -> Journey:
+        """Set user active journey status to DELAYED"""
+
+        allowed = {"STARTED"}  
         journey = db.get(Journey, journey_id)
         if not journey:
             raise HTTPException(404, f"Journey {journey_id} not found")
 
-        allowed = {"ACTIVE"}  #only allow delay while still active
         if journey.status not in allowed:
             raise HTTPException(
                 status_code=400,
@@ -46,6 +59,7 @@ class JourneyEventHandler:
             )
 
         journey.status = "DELAYED"
+
         #TODO Add notified time
         db.commit()
         db.refresh(journey)
@@ -53,11 +67,13 @@ class JourneyEventHandler:
 
     @staticmethod
     def stop_reached(journey_id: UUID, db: Session) -> Journey:
+        allowed = {"ARRIVED"}  
         journey = db.get(Journey, journey_id)
+
         if not journey:
             raise HTTPException(404, f"Journey {journey_id} not found")
 
-        if journey.status in {"ARRIVED", "COMPLETED", "CANCELLED"}:
+        if journey.status not in allowed:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot mark stop reached journey is already finished ({journey.status})"

@@ -4,10 +4,17 @@ from datetime import datetime
 
 
 class JourneyEventType():
+    # For when user selects their route and is added to database
+    EVENT_TYPE_STARTED = "STARTED"
 
+    # This is for when the user submits their bus has arrived. The journey is now active
     EVENT_TYPE_ARRIVED =  "ARRIVED"
-    EVENT_TYPE_STOP_REACHED = "STOP_REACHED"
+
+    # Delayed event
     EVENT_TYPE_DELAYED = "DELAYED"
+
+    # User Journey stops
+    EVENT_TYPE_STOP_REACHED = "STOP_REACHED"
     
 
 
