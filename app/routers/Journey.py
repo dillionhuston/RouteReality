@@ -2,6 +2,8 @@ from uuid import UUID
 from fastapi import Depends, APIRouter, HTTPException
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app.models.Route import Route
 from app.models.Route import Stop          
 from app.models.Database import get_db
@@ -13,14 +15,22 @@ from app.Services.journeyService.eventHandler import JourneyEventHandler
 
 router = APIRouter(prefix="/journeys", tags=['Journeys'])
 
+# Rate limiting variables. V2 will have a more robust retry logic 
+last_request_time = {}
+COOLDOWN_SECONDS = 180
+
+
 @router.post("/start")
 def start_journey(
     journey: StartJourney,
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db)
+    ):
     """
     User starts their journey by submitting route and start/end stops.
     Frontend sends plain string IDs (public_id values).
     """
+
+    
     if not journey.start_stop_id:
         raise HTTPException(
             status_code=400,
@@ -32,7 +42,8 @@ def start_journey(
             status=400,
             detail = "End stop is required"
         )
-        
+    
+
 
     new_journey = JourneyService.start_journey(db=db, data=journey)
 
@@ -56,6 +67,18 @@ def add_journey_event(
     User submits a journey event (Arrived, Delayed, StopReached, etc.)
     journey_id is the internal UUID returned from /start
     """
+
+    now = datetime.now(timezone.utc)
+    last_time = last_request_time.get(journey_id)
+
+    if last_time:
+        delta = (now - last_time).total_seconds()
+        if delta < COOLDOWN_SECONDS:
+            raise HTTPException(
+                status = 429,
+                detail =f"Too many requests for this journey. Try again in {int(COOLDOWN_SECONDS - delta)}s"
+            )
+
     if not event.event:
         raise HTTPException(
             status_code=400,

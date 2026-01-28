@@ -59,8 +59,7 @@ class JourneyService:
 
         db.add(journey)
         db.commit()
-        return journey      
-
+        return journey
 
     @staticmethod
     def get_active_journey(journey_id: UUID, db: Session) -> Journey:
