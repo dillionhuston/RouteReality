@@ -1,6 +1,7 @@
 # Belfast Journey Event based Bus Tracking System
 
-https://routereality.co.uk/
+**Live at:** [https://routereality.co.uk](https://routereality.co.uk)  
+Community-powered real-time bus predictions for Belfast & Northern Ireland.
 
 RouteReality is a live bus tracking and prediction service for Belfast that combines static timetable data with real user-reported events to produce more reliable arrival estimates with confidence scoring.
 
