@@ -43,14 +43,16 @@ Each prediction includes a **confidence score** based on:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone [<repository-url>](https://github.com/dillionhuston/RouteReality.git)
 cd journey-tracking-system
+
+
+# Set up environment variables
+python -m venv venv
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up environment variables
-cp .env.example .env
 # Edit .env and add your DATABASE_URL
 ### Database Setup
 
