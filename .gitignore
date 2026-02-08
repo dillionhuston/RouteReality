@@ -1,2 +1,4 @@
 .env
 __pycache__/
+/initdb.py
+./initdb.py

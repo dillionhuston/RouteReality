@@ -24,7 +24,7 @@ class Stop(Base):
     name = Column(String, nullable=False)
     latitude = Column(Float, nullable=False)
     longitude = Column(Float, nullable=False)
-
+   
     route_stops = relationship('RouteStop', back_populates='stop')
 
 

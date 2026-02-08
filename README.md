@@ -1,33 +1,40 @@
-# Journey Tracking System
+# Belfast Journey Event based Bus Tracking System
 
-A real-time public transit journey tracking and prediction system that learns from user-submitted journey data to improve arrival time predictions.
+https://routereality.co.uk/
+
+RouteReality is a live bus tracking and prediction service for Belfast that combines static timetable data with real user-reported events to produce more reliable arrival estimates with confidence scoring.
 
 ## What It Does
 
-This system tracks bus journeys and predicts arrival times by combining official timetable data with real user journey submissions. The more users submit their actual journey data, the more accurate the predictions become for everyone.
+RouteReality combines multiple data sources to estimate bus arrival times:
 
-**Key Features:**
-- Start and track active bus journeys
-- Submit journey events (arrived, delayed, stop reached)
-- Smart predictions that improve with more data
-- Blend official timetables with real-world user data
-- RESTful API built with FastAPI
+- **User-reported events** (recent arrivals or delays)
+- **Historical journey data**
+- **Static timetable data** (fallback)
 
-## How Predictions Work
+Recent user journeys are weighted more heavily than older data.  
+If no recent reports exist, the system falls back to static timetable times.
 
-The prediction engine uses a tiered approach based on data availability:
+Each prediction includes a **confidence score** based on:
+- Number of recent events
+- Recency of events
+- Whether static data was used
 
-- **20+ user journeys**: Uses only real user data (most accurate)
-- **5-19 user journeys**: Blends user data with official timetables
-- **< 5 user journeys**: Falls back to official timetable data
-- **No data**: Safe 30-minute fallback estimate
+### New in V1.1
+- User-reported arrivals and events integrated into predictions
+- Weighted averages, with heavy emphasis on recent data
+- Confidence scores for all predictions
+- Clear distinction between predicted and user-reported times in the UI
+- Improved backend prediction logic and fallbacks
 
-Predictions use median journey duration when enough data exists (more robust to outliers) and average duration for smaller datasets.
+### Known Limitations
+- Some routes or stops may overlap/conflict on external map providers (e.g. Google Maps)
+- Predictions are less confident in areas with fewer user reports
+- Coverage and accuracy improve as more users submit data
 
 ## Quick Start
 
 ### Prerequisites
-
 - Python 3.9+
 - PostgreSQL
 - pip or poetry for dependency management
@@ -45,8 +52,6 @@ pip install -r requirements.txt
 # Set up environment variables
 cp .env.example .env
 # Edit .env and add your DATABASE_URL
-```
-
 ### Database Setup
 
 ```bash

@@ -9,7 +9,7 @@ from app.utils.logger import logger
 from app.models.Journey import Journey
 from app.schemas.journey import JourneyEventType
 
-from app.Services.Prediction.prediction import PredictionService
+from app.Services.Prediction.service import predict_bus_time
 
 logger = logger.get_logger()
 
