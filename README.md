@@ -1,4 +1,10 @@
 # Belfast Journey Event based Bus Tracking System
+[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-brightgreen)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-15+-blue)](https://www.postgresql.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Live Demo](https://img.shields.io/badge/live-routereality.co.uk-blue)](https://routereality.co.uk)
+[![Stars](https://img.shields.io/github/stars/dillionhuston/RouteReality?style=social)](https://github.com/dillionhuston/RouteReality)
 
 **Live at:** [https://routereality.co.uk](https://routereality.co.uk)  
 Community-powered real-time bus predictions for Belfast & Northern Ireland.
@@ -45,7 +51,7 @@ Each prediction includes a **confidence score** based on:
 ```bash
 # Clone the repository
 git clone [<repository-url>](https://github.com/dillionhuston/RouteReality.git)
-cd journey-tracking-system
+cd RouteReality
 
 
 # Set up environment variables
