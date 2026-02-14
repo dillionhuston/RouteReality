@@ -36,8 +36,8 @@ def get_prediction(
     predicted_time, confidence = predict_bus_time(
 
         static_time=static_time,
-        journey_times=journey_times,
         user_events=events,
+        past_arrivals=journey_times,
         now=datetime.now(timezone.utc))
     
     return predicted_time, confidence

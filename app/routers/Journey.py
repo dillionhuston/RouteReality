@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 from app.models.Database import SessionLocal, engine, get_db  
+
 from app.models.Route import Route, Stop, RouteStop
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.schemas.journey import StartJourney, AddJourneyEvent
@@ -18,7 +19,7 @@ COOLDOWN_SECONDS = 180  # 3 min cooldown. dont want people spamming events and r
 # yeah this is not thread safe at all. Works for now, fix with redis or thread when it starts to hurt
 last_request_time: dict[UUID, datetime] = {}
 
-router = APIRouter(prefix="/journeys", tags=["Route"])
+router = APIRouter(prefix="/journeys", tags=["Journey"])
 
 @router.post("/start")
 def start_journey(journey: StartJourney, db: Session = Depends(get_db)):

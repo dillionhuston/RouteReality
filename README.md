@@ -4,6 +4,8 @@ https://routereality.co.uk/
 
 RouteReality is a live bus tracking and prediction service for Belfast that combines static timetable data with real user-reported events to produce more reliable arrival estimates with confidence scoring.
 
+
+
 ## What It Does
 
 RouteReality combines multiple data sources to estimate bus arrival times:
@@ -20,12 +22,13 @@ Each prediction includes a **confidence score** based on:
 - Recency of events
 - Whether static data was used
 
-### New in V1.1
-- User-reported arrivals and events integrated into predictions
-- Weighted averages, with heavy emphasis on recent data
-- Confidence scores for all predictions
-- Clear distinction between predicted and user-reported times in the UI
-- Improved backend prediction logic and fallbacks
+### New in V1.2
+- Added user event reporting (arrived/departed) + live status propagation
+- Added longitude and latitude responses /route/routes. Can be used for map integrate
+- New /journeys/status/stop/{stop_id} endpoint for stop-specific trip counts and number of trips per 24 hour
+- Prediction now respects fresh departure events (no negative ETAs)
+- Auto-polling support (20s refresh when viewing route/stop(FRONTEND)
+- Fixed stale/missed timetable edge cases after live override
 
 ### Known Limitations
 - Some routes or stops may overlap/conflict on external map providers (e.g. Google Maps)

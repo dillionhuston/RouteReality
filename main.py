@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.Journey import router as journey_endpoint
 from app.routers.Route import router as routes_endpoint
+from app.routers.status import router as status_endpoint
 
 app = FastAPI(
     title="Bus Tracker API",
@@ -22,6 +23,7 @@ app.add_middleware(
 
 app.include_router(journey_endpoint)
 app.include_router(routes_endpoint)
+app.include_router(status_endpoint)
 
 @app.get("/")
 async def root():

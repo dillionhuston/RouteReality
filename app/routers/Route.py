@@ -3,86 +3,94 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 
-# db stuff
-from app.models.Database import SessionLocal, engine, get_db
+from app.models.Database import get_db
 from app.models.Route import Route, Stop, RouteStop
 
 from app.schemas.route import StopsPerRoute, RouteOut
 
-from app.utils.logger import logger  # hope this is the right one...
+from app.utils.logger import logger
 
-
-
-logger = logger.get_logger()  # wait this was dumb af, fix later
-# actually just using the imported logger for now
-
-router = APIRouter(prefix="/route", tags=["Route"])
+router = APIRouter(prefix="/route", tags=["Routes"])
 
 
 @router.get("/routes", response_model=List[RouteOut])
 def get_routes(db: Session = Depends(get_db)):
-    """Quick list of all routes for the frontend dropdown"""
+    """
+    Quick list of all routes + first stop lat/lon for dropdown + map pins
+    """
+    routes = (
+        db.query(Route)
+        .options(joinedload(Route.route_stops).joinedload(RouteStop.stop))
+        .order_by(Route.name)
+        .all()
+    )
 
-    routes = db.query(Route).all()
     if not routes:
-        logger.error("No routes at all in the db - wtf")
-        raise HTTPException(
-            status_code=404,
-            detail="Could not return a list of routes"  
-        )
-    
-    # keeping it simple stupid
-    return [
-        {"id": r.id, "name": r.name}
-        for r in routes
-    ]
+        logger.warning("No routes in db wtf")
+        raise HTTPException(404, "No routes available")
+
+    result = []
+
+    for r in routes:
+        lat = None
+        lon = None
+
+        if r.route_stops:
+            # get first stop by sequence
+            first = min(r.route_stops, key=lambda rs: rs.sequence)
+            if first and first.stop:
+                lat = first.stop.latitude
+                lon = first.stop.longitude
+
+        result.append(RouteOut(
+            id=r.id,
+            name=r.name,
+            first_stop_lat=lat,
+            first_stop_lon=lon
+        ))
+    return result
 
 
-@router.get("/routes/{route_id}/stops", response_model=List[StopsPerRoute])
+@router.get("/{route_id}/stops", response_model=List[StopsPerRoute])
 def get_stops_per_route(route_id: str, db: Session = Depends(get_db)):
-    """Get ordered stops for a route - with some basic data cleanup"""
-    
-    route_stops = (
+    """Get all ordered stops for a route + lat/lon"""
+    stops = (
         db.query(RouteStop)
         .options(joinedload(RouteStop.stop))
         .filter(RouteStop.route_id == route_id)
         .order_by(RouteStop.sequence)
         .all()
     )
-    
-    if not route_stops:
-        logger.info(f"No stops found for {route_id} - maybe bad route id?")
-        raise HTTPException(404, f"No stops found for route '{route_id}'")
+
+    if not stops:
+        raise HTTPException(404, f"No stops for route '{route_id}'")
     
     result = []
-    seen_sequences = set()   # trying to catch the duplicate seq bug
-    
-    for rs in route_stops:
+    seen_seq = set()
+
+    for rs in stops:
         if not rs.stop:
-            logger.warning(f"RouteStop missing stop object - id {rs.stop_id}")
+            logger.warning(f"Missing stop object - {rs.stop_id}")
             continue
             
-        stop_name = rs.stop.name if rs.stop.name else "???"
+        name = (rs.stop.name or "???").strip()
         
-        if stop_name.strip() == "" or stop_name == "Unknown Stop":
-            logger.warning(f"Skipping dodgy stop {rs.stop_id} - name: '{stop_name}'")
+        if not name or name == "Unknown Stop":
+            print(f"Skipping bad stop {rs.stop_id} name='{name}'")
             continue
         
-        # duplicate seq check (yes this happens in prod data)
-        if rs.sequence in seen_sequences:
-            logger.warning(f"Duplicate sequence {rs.sequence} for route {route_id} - keeping anyway")
-        seen_sequences.add(rs.sequence)
+        if rs.sequence in seen_seq:
+            print(f"Duplicate seq {rs.sequence} on {route_id} - keeping anyway")
+        seen_seq.add(rs.sequence)
         
-        stop_data = {
-            "id": rs.stop_id,
-            "name": stop_name.strip(),  # just to be safe
-            "sequence": rs.sequence,
-            "direction": rs.direction if rs.direction else "N/A"
-        }
-        
-        result.append(stop_data)
+        result.append(StopsPerRoute(
+            id=rs.stop_id,
+            name=name,
+            sequence=rs.sequence,
+            direction=rs.direction or "N/A",
+            latitude=rs.stop.latitude,     # for frotend 
+            longitude=rs.stop.longitude    # for frontend
+        ))
     
-    # bit of debug spam, remove later?
-    logger.warning(f"[DEBUG] Route {route_id} - kept {len(result)} valid stops out of {len(route_stops)}")
-    
-    return result
+    print(f"Route {route_id} - {len(result)} valid stops")
+    return result   
