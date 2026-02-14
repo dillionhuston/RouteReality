@@ -1,6 +1,13 @@
 # Belfast Journey Event based Bus Tracking System
+[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-brightgreen)](https://fastapi.tiangolo.com/)
+[![PostgreSQL](https://img.shields.io/badge/postgresql-15+-blue)](https://www.postgresql.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Live Demo](https://img.shields.io/badge/live-routereality.co.uk-blue)](https://routereality.co.uk)
+[![Stars](https://img.shields.io/github/stars/dillionhuston/RouteReality?style=social)](https://github.com/dillionhuston/RouteReality)
 
-https://routereality.co.uk/
+**Live at:** [https://routereality.co.uk](https://routereality.co.uk)  
+Community-powered real-time bus predictions for Belfast & Northern Ireland.
 
 RouteReality is a live bus tracking and prediction service for Belfast that combines static timetable data with real user-reported events to produce more reliable arrival estimates with confidence scoring.
 
@@ -46,14 +53,16 @@ Each prediction includes a **confidence score** based on:
 
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd journey-tracking-system
+git clone [<repository-url>](https://github.com/dillionhuston/RouteReality.git)
+cd RouteReality
+
+
+# Set up environment variables
+python -m venv venv
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Set up environment variables
-cp .env.example .env
 # Edit .env and add your DATABASE_URL
 ### Database Setup
 
@@ -201,8 +210,24 @@ Provides database abstraction and works well with FastAPI's dependency injection
 ### Why String IDs?
 Routes and stops use public identifiers (route numbers, ATCO codes) that users recognize. Internal journey IDs use UUIDs.
 
-### Why Median over Average?
-With 5+ data points, median is more robust to outliers (one unusually delayed journey won't skew predictions).
+### Why weighted Average over Mediian?
+We are modelling time drift, and not all data is trustworthy, Bus delays are not random outlines, there can be:
+- Traffic builds
+- Weather changes
+- School runs
+- Public events
+
+So when we get:
+- When was the most recent time someone reported a event? (reported 2 mins ago)
+- When was the most recent completed journey?(30 mins ago)
+- When is the scheduled time on timetable?(a week ago or 1 month)
+
+It allows us to say:
+- Recent user report is very important
+- - Older journeys are somewhat important
+  - - Static timetable is our last report
+   
+Using the weighted average allows us to get the most recent, time sensitive real-world data, making it more reliable than older or static data.
 
 ### Data Source Tracking
 Journeys track whether they come from official timetables or user submissions, allowing the prediction engine to trust user data more as it accumulates.
