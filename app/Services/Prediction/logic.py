@@ -44,7 +44,7 @@ def adjust_timetable_time(
     # already gone → drift forward a bit
     late_min = (ref - sched).total_seconds() / 60
     drift = min(late_min, max_drift_min)
-    adjusted = ref + timedelta(minutes=drift + 2)  # +2 min buffer
+    adjusted = sched + timedelta(minutes=drift + 2) # keeps the drift relative to the scheduled time, not the current time
     conf = max(0.25, 0.55 - (drift / max_drift_min) * 0.3)
 
     return adjusted, conf
@@ -60,6 +60,8 @@ def predict_bus_time(
     Main prediction logic - combines timetable + crowd history + recent events
     tries hard not to tell people "bus in -3 min" when it's already gone
     """
+
+    age_min = None
     if now is None:
         now = datetime.now(timezone.utc)
 
@@ -112,7 +114,7 @@ def predict_bus_time(
         )
 
         # if we saw recent departure → push timetable forward more
-        if 'age_min' in locals() and 5 < age_min <= 20:
+        if age_min is not None and 5 < age_min <= 20:
             extra = min(12, max(0, age_min - 4))
             sched += timedelta(minutes=extra)
             sched_conf = max(0.45, sched_conf - 0.08)
@@ -152,15 +154,17 @@ def get_bus_prediction(
     now = datetime.now(timezone.utc)
 
     past_times = get_user_journeys(
+        db=db,
         route_id=route_id,
-        stop_id=stop_id,
-        db=db
+        stop_id=stop_id
+        
     )
 
     events = get_recent_user_events(
+        db=db,
         route_id=route_id,
         stop_id=stop_id,
-        db=db
+        
     )
 
     return predict_bus_time(
@@ -168,5 +172,6 @@ def get_bus_prediction(
         static_is_tomorrow=static_is_tomorrow,
         user_events=events,
         past_arrivals=past_times,
-        now=now
+        now=now,
+        
     )

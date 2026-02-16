@@ -8,7 +8,7 @@ def _prediction_source(journeys, events, static_time):
     if events:
         return "live"
     if journeys:
-        return "histoorical"
+        return "historical"
     if static_time:
         return "fallback"
     
@@ -38,15 +38,13 @@ def get_prediction(
         static_time=static_time,
         user_events=events,
         past_arrivals=journey_times,
-        now=datetime.now(timezone.utc))
+        now=now)
     
-    return predicted_time, confidence
-                                                  
+    return {
+        "predicted_time": predicted_time,
+        "confidence": confidence,
+        "source": [_prediction_source(journey_times, events, static_time)]}
+
    
 
 
-def return_prediction(
-        route_id: str,
-        stop_id: str):
-    """Debug functiuon for testing"""
-    return
