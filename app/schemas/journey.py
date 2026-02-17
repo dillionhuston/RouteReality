@@ -1,9 +1,10 @@
 from pydantic import BaseModel, datetime_parse, Field
 from datetime import datetime
+from enum import Enum
 
 
 
-class JourneyEventType():
+class JourneyEventType(str, Enum):
     # For when user selects their route and is added to database
     EVENT_TYPE_STARTED = "STARTED"
 
@@ -28,7 +29,7 @@ class StartJourney(BaseModel):
 
 
 class AddJourneyEvent(BaseModel):
-    event: str
+    event: JourneyEventType
 
 
 
