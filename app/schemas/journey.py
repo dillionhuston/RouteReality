@@ -8,6 +8,8 @@ class JourneyEventType(str, Enum):
     # For when user selects their route and is added to database
     EVENT_TYPE_STARTED = "STARTED"
 
+    EVENT_TYPE_PENDING = "PENDING"
+
     # This is for when the user submits their bus has arrived. The journey is now active
     EVENT_TYPE_ARRIVED =  "ARRIVED"
 

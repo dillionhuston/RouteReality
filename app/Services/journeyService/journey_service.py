@@ -27,19 +27,25 @@ class JourneyService:
         # fetch route
         route = db.query(Route).filter(Route.id == data.route_id).first()
         if not route:
-            raise HTTPException(404, detail=f"Route {data.route_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Route {data.route_id} not found")
 
         # start stop
         start_stop = db.query(Stop).filter(Stop.id == data.start_stop_id).first()
         if not start_stop:
-            raise HTTPException(404, detail=f"Start stop {data.start_stop_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Start stop {data.start_stop_id} not found")
 
         # end stop (optional)
         end_stop = None
         if data.end_stop_id:
             end_stop = db.query(Stop).filter(Stop.id == data.end_stop_id).first()
             if not end_stop:
-                raise HTTPException(404, detail=f"End stop {data.end_stop_id} not found")
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"End stop {data.end_stop_id} not found")
 
         # starting point time. User input or now
         planned = data.planned_start_time or datetime.now(timezone.utc)
@@ -53,16 +59,19 @@ class JourneyService:
         is_tomorrow = False
         minutes_until = None
 
-        cif_path = Path("app/data/MPH_Metro_5_Jan_2026.cif")
-        if cif_path.exists():
-            # print("Found CIF - checking scheduled time...")
-            scheduled_time, minutes_until, is_tomorrow = get_closest_scheduled_time_to_now(
+        result = get_closest_scheduled_time_to_now(
                 route_id=data.route_id,
                 stop_id=data.start_stop_id,
                 reference_time=planned,
-            )
+                )
+        print(f"DEBUG - Return value type: {type(result)}")
+        print(f"DEBUG - Return value length: {len(result) if hasattr(result, '__len__') else 'not a sequence'}")
+        print(f"DEBUG - Return value: {result}")
 
-            if scheduled_time:
+        # Then unpack
+        scheduled_time, minutes_until, is_next_day = result
+        
+        if scheduled_time:
                 sched_dt = datetime.combine(planned.date(), scheduled_time, tzinfo=timezone.utc)
                 if is_tomorrow:
                     sched_dt += timedelta(days=1)
@@ -70,16 +79,16 @@ class JourneyService:
                 if sched_dt > planned:
                     planned = sched_dt
                     official_start_str = planned.isoformat()
-                    # print(f"Used timetable time instead: {planned.strftime('%H:%M')}")
-                # else:
-                #     print("Timetable time already passed, keeping user time")
 
         # Get prediction, pass what we have
-        predicted_arrival, confidence = get_prediction(
+        predicted_result = get_prediction(
             db=db,
             route_id=data.route_id,
             stop_id=data.end_stop_id,
-            static_time=scheduled_time )
+            static_dt=scheduled_time )
+        
+        predicted_arrival = predicted_result.get("predicted_arrival") 
+        confidence = predicted_result.get("confidence")
 
         # Add the journey
         journey = Journey(
@@ -104,8 +113,6 @@ class JourneyService:
         db.add(journey)
         db.commit()
         db.refresh(journey)
-
-        # print(f"New journey {journey.id} started - predicted at {predicted_arrival}")
         return journey
 
     @staticmethod
@@ -126,6 +133,9 @@ class JourneyService:
         )
 
         if journey is None:
-            raise HTTPException(404, detail=f"No active journey found for {journey_id}")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No active journey found for {journey_id}"
+            )
 
         return journey

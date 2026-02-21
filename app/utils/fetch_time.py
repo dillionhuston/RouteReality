@@ -1,18 +1,23 @@
 # utils/fetch_time.py
 # pulls scheduled times from the CIF file for stops
 # still using the raw text parse since DB import is being worked on
+import os
 
 from datetime import datetime, time, timezone, timedelta
 from pathlib import Path
 import re
 from typing import List, Optional, Tuple
 
-from app.utils.logger.logger import get_logger
 
+from app.utils.logger.logger import get_logger
+from dotenv import load_dotenv
+
+load_dotenv()
 logger = get_logger(__name__)
 
+
 # hardcoded for now - move to env/config later
-CIF_FILE = Path("app/data/MPH_Metro_5_Jan_2026.cif")
+CIF_FILE = os.getenv("CIF_FILE")
 
 
 def parse_time(time_str: str) -> Optional[time]:
@@ -34,7 +39,7 @@ def fetch_all_scheduled_times_for_stop(stop_id: str) -> List[time]:
     Scan the CIF file for all times attached to this stop code.
     Returns sorted unique times (or empty list if nothing found).
     """
-    if not CIF_FILE.is_file():
+    if not CIF_FILE:
         logger.warning(f"CIF file gone: {CIF_FILE}")
         return []
 
@@ -72,16 +77,13 @@ def get_closest_scheduled_time_to_now(
     route_id: str,
     stop_id: str,
     reference_time: Optional[datetime] = None) -> Tuple[Optional[time], Optional[int], bool]:
-    """
-    Finds the next scheduled time after reference_time (now by default).
-    Returns (time, minutes_until, is_tomorrow)
-    """
+    logger.info("=== FETCH_TIME v3 ACTIVE – RETURNING THREE VALUES – UUID: 8f3b2d9a-7e1c-4k5m-9p0q-r2s4t6u8v0w1 ===")
     if reference_time is None:
         reference_time = datetime.now(timezone.utc)
 
     all_times = fetch_all_scheduled_times_for_stop(stop_id)
     if not all_times:
-        # print(f"No schedule for {stop_id}")
+        logger.debug(f"No scheduled times found for stop {stop_id}")
         return None, None, False
 
     ref_date = reference_time.date()
@@ -95,7 +97,7 @@ def get_closest_scheduled_time_to_now(
         next_time = all_times[idx]
         full_dt = datetime.combine(ref_date, next_time, tzinfo=timezone.utc)
         mins = int((full_dt - reference_time).total_seconds() / 60)
-        return next_time, max(0, mins), False
+        return next_time, max(0, mins), False     # ← add , False
 
     # nothing left today → first tomorrow
     if all_times:
@@ -103,6 +105,7 @@ def get_closest_scheduled_time_to_now(
         tomorrow = ref_date + timedelta(days=1)
         full_dt = datetime.combine(tomorrow, next_time, tzinfo=timezone.utc)
         mins = int((full_dt - reference_time).total_seconds() / 60)
-        return next_time, max(0, mins), True
+        return next_time, max(0, mins), True      # ← add , True
 
-    return None, None, False 
+    # unreachable (because of earlier if not all_times), but for safety:
+    return None, None, False

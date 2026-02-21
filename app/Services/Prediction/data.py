@@ -97,8 +97,7 @@ def get_user_journeys(
     db: Session,
     route_id: str,
     stop_id: str,
-    limit: int = 10,
-    ) -> List[datetime]:
+    limit: int = 10,) -> List[datetime]:
     """
     Get arrival times from recent completed user journeys.
     Used for crowd-based average ETA.

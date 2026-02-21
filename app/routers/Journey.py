@@ -9,6 +9,8 @@ from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
 from app.utils.logger.logger import get_logger
 
+from datetime import datetime
+
 
 logger = get_logger(__name__) # give name  
 
@@ -56,26 +58,17 @@ def start_journey(journey: StartJourney, db: Session = Depends(get_db))-> dict:
         "start_stop_id": new_j.start_stop_id,
         "end_stop_id": new_j.end_stop_id,
         "predicted_status": new_j.predicted_status,
-        "predicted_arrival": new_j.predicted_arrival.isoformat() if new_j.predicted_arrival else None,  
+        "predicted_arrival": new_j.predicted_arrival,  
         "current_status": new_j.status,
-        "official_start_time": new_j.official_start_time.isoformat() if new_j.official_start_time else None,
-        "created_at":  new_j.created_at.isoformat() if new_j.created_at else None,
+        "official_start_time": new_j.official_start_time,
+        "created_at":  new_j.created_at
     }
 
 
 @router.post("/{journey_id}/event")
 def add_journey_event(journey_id: UUID, event: AddJourneyEvent, db: Session = Depends(get_db))-> dict:
+    """Add event for journey. ARRIVED, DELAYED, STOP_REACHED"""
     now = datetime.now(timezone.utc)
-    # super basic anti-spam we have security in prod. This needs removed fast
-    if journey_id in last_request_time:
-            diff = (now - last_request_time[journey_id]).total_seconds()
-            if diff < COOLDOWN_SECONDS:
-                secs_left = int(COOLDOWN_SECONDS - diff)
-                raise HTTPException(
-                    status_code=429,
-                    detail= f"Chill for {secs_left} seconds please"
-                )
-
     last_request_time[journey_id] = now
 
     updated = JourneyEventHandler.add_event(
@@ -96,9 +89,9 @@ def add_journey_event(journey_id: UUID, event: AddJourneyEvent, db: Session = De
     return {
             "journey_id": str(updated.id),
             "current_status": updated.status,
-            "predicted_arrival": updated.predicted_arrival.isoformat() if updated.predicted_arrival else None,
+            "predicted_arrival": updated.predicted_arrival,
             "last_event": event.event.value,
-            "updated_at": updated.created_at.isoformat() if updated.created_at else None,
+            "updated_at": updated.created_at,
             "message": f"Got it - recorded {event.event}"
         }
 

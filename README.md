@@ -9,12 +9,19 @@
 **Live at:** [https://routereality.co.uk](https://routereality.co.uk)  
 Community-powered real-time bus predictions for Belfast & Northern Ireland.
 
-RouteReality is a live bus tracking and prediction service for Belfast that combines static timetable data with real user-reported events to produce more reliable arrival estimates with confidence scoring.
+## Screenshots
 
+<p align="center">
+  <img src="images/start_journey_map.png" alt="Home screen – start journey map" width="80%">
+  <br><br>
+  <img src="images/event_starts.png" alt="Route view with event reporting" width="80%">
+  <br><br>
+  <img src="images/started.png" alt="Active journey screen" width="80%">
+</p>
 
+RouteReality is a live bus tracking and prediction service for Belfast. It combines **static timetable data** with **real user-reported events** to deliver more reliable arrival estimates, confidence scoring, and event-based predictions.
 
 ## What It Does
-
 RouteReality combines multiple data sources to estimate bus arrival times:
 
 - **User-reported events** (recent arrivals or delays)
@@ -29,13 +36,35 @@ Each prediction includes a **confidence score** based on:
 - Recency of events
 - Whether static data was used
 
-### New in V1.2
-- Added user event reporting (arrived/departed) + live status propagation
-- Added longitude and latitude responses /route/routes. Can be used for map integrate
-- New /journeys/status/stop/{stop_id} endpoint for stop-specific trip counts and number of trips per 24 hour
-- Prediction now respects fresh departure events (no negative ETAs)
-- Auto-polling support (20s refresh when viewing route/stop(FRONTEND)
-- Fixed stale/missed timetable edge cases after live override
+
+## Current Version - V1.3 Update (Stability & Cleanup Release)
+
+Version 1.3 focuses on stability and internal cleanup in preparation for the upcoming v2 release.
+
+- Fixed bugs across all services and API routes
+- Improved error handling and API responses
+- Corrected incorrect or missing type annotations
+- Hardened validation for journey events and prediction logic
+- Reduced edge-case failures caused by stale or conflicting data
+- Improved internal service boundaries for easier maintenance
+
+
+## Prediction Engine Improvements in v1.3
+- Better handling of fresh departure and arrival events
+- Prevented negative ETAs after live overrides
+- More reliable fallback to static timetable data
+- Improved confidence scoring accuracy under low-data conditions
+
+## What's Coming in V2
+Development has started on **RouteReality V2**, which will introduce:
+- User accounts and authenticated journey submissions
+- Stronger database robustness and cleanup strategies
+- Improved scalability for higher traffic and more routes
+- Richer historical data modelling for better predictions
+- Foundation for real-time updates and analytics
+
+V1.3 focuses on making the current system stable, predictable, and ready for more features.
+
 
 ### Known Limitations
 - Some routes or stops may overlap/conflict on external map providers (e.g. Google Maps)
@@ -52,18 +81,21 @@ Each prediction includes a **confidence score** based on:
 ### Installation
 
 ```bash
-# Clone the repository
-git clone [<repository-url>](https://github.com/dillionhuston/RouteReality.git)
+# Clone the repo
+git clone https://github.com/dillionhuston/RouteReality.git
 cd RouteReality
 
-
-# Set up environment variables
+# Create & activate virtual environment
 python -m venv venv
+source venv/bin/activate    # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Edit .env and add your DATABASE_URL
+# Copy example env file and edit it
+cp .env.example .env
+# → edit .env and set your DATABASE_URL
+
 ### Database Setup
 
 ```bash
@@ -79,31 +111,24 @@ alembic upgrade head
 ```bash
 uvicorn app.main:app --reload
 ```
-
 API will be available at `http://localhost:8000`
-
 Interactive docs at `http://localhost:8000/docs`
 
+
 ## API Usage
-
 ### Get Available Routes
-
 ```bash
 GET /route/routes
 ```
-
 Returns list of all available routes with IDs and names.
 
 ### Get Stops for a Route
-
 ```bash
 GET /route/routes/{route_id}/stops
 ```
-
 Returns ordered list of stops for the specified route.
 
 ### Start a Journey
-
 ```bash
 POST /journeys/start
 Content-Type: application/json
@@ -115,11 +140,9 @@ Content-Type: application/json
   "planned_start_time": "2026-01-24T09:00:00Z"  // optional
 }
 ```
-
 Returns journey ID and initial predictions.
 
 ### Submit Journey Event
-
 ```bash
 POST /journeys/{journey_id}/event
 Content-Type: application/json
@@ -128,11 +151,39 @@ Content-Type: application/json
   "event": "ARRIVED"  // or "DELAYED", "STOP_REACHED"
 }
 ```
-
 Updates journey status and returns updated predictions.
 
-## Project Structure
+## Technical Decisions
 
+### Why SQLAlchemy?
+Provides database abstraction and works well with FastAPI's dependency injection.
+
+### Why String IDs?
+Routes and stops use public identifiers (route numbers, ATCO codes) that users recognize. Internal journey IDs use UUIDs.
+
+### Why Weighted Average over Median?
+We are modelling time drift, and not all data is trustworthy, Bus delays are not random outliners, there can be:
+- Traffic builds
+- Weather changes
+- School runs
+- Public events
+
+So when we get:
+- When was the most recent time someone reported an event? (reported 2 mins ago)
+- When was the most recent completed journey?(30 mins ago)
+- When is the scheduled time on timetable?(a week ago or 1 month)
+
+It allows us to say:
+- Recent user report is very important
+- - Older journeys are somewhat important
+  - - Static timetable is our last report
+   
+Using the weighted average allows us to get the most recent, time sensitive real-world data, making it more reliable than older or static data.
+
+### Data Source Tracking
+Journeys track whether they come from official timetables or user submissions, allowing the prediction engine to trust user data more as it accumulates.
+
+## Project Structure
 ```
 app/
 ├── models/              # SQLAlchemy models
@@ -202,36 +253,6 @@ We welcome contributions! Here's how you can help:
 pytest tests/
 ```
 
-## Technical Decisions
-
-### Why SQLAlchemy?
-Provides database abstraction and works well with FastAPI's dependency injection.
-
-### Why String IDs?
-Routes and stops use public identifiers (route numbers, ATCO codes) that users recognize. Internal journey IDs use UUIDs.
-
-### Why weighted Average over Mediian?
-We are modelling time drift, and not all data is trustworthy, Bus delays are not random outlines, there can be:
-- Traffic builds
-- Weather changes
-- School runs
-- Public events
-
-So when we get:
-- When was the most recent time someone reported a event? (reported 2 mins ago)
-- When was the most recent completed journey?(30 mins ago)
-- When is the scheduled time on timetable?(a week ago or 1 month)
-
-It allows us to say:
-- Recent user report is very important
-- - Older journeys are somewhat important
-  - - Static timetable is our last report
-   
-Using the weighted average allows us to get the most recent, time sensitive real-world data, making it more reliable than older or static data.
-
-### Data Source Tracking
-Journeys track whether they come from official timetables or user submissions, allowing the prediction engine to trust user data more as it accumulates.
-
 ## Configuration
 
 Key environment variables in `.env`:
@@ -240,13 +261,6 @@ Key environment variables in `.env`:
 DATABASE_URL=postgresql://user:password@localhost/journey_tracking
 ```
 
-## Known Limitations
-
-- No authentication/authorization yet
-- No data cleanup for old journeys
-- Limited error handling for edge cases
-- No rate limiting on API endpoints
-- Predictions don't account for time of day or day of week patterns yet
 
 ## Roadmap
 
