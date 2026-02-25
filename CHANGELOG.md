@@ -1,51 +1,92 @@
-## Chagelog
+# Changelog
 
-# V1.0 - Initial release - 01-02-2026
-
-### Added 
-- Static timetable-based bus arrival predictions
-- Stop and route search functionality 
-- Backend prediction service
-- User-reported arrival and delay events 
-- Public API for fetching stop times and  predictions
-- Initial frontend for viewing routes and arrivals
+All  changes to RouteReality will be documented in this file.
 
 
+## [1.3.0] - 2026-02-21 – Stability & Cleanup Release
 
-## V1.1 - 08-02-2026
+### Added
+- Three UI screenshots to README (start journey map, event reporting, active journey screen)
+- `JourneyEventType.PENDING` to support clearer initial journey states
+- Structured logging throughout prediction and event handling
+- Richer prediction payload: `source`, `recent_event_count`, `historical_count`
+- `recent_trips` limit and counts in status endpoints
 
-## Added
+### Changed
+- Prediction interface: renamed `static_dt` → `reference_time`, improved fallback safety
+- Centralized prediction refresh with new `update_prediction` helper
+- Tightened event state transitions and validation
+- Adjusted `predicted_arrival` handling on `DELAYED` events
+- Removed unnecessary `.isoformat()` conversions in API responses
+- CIF timetable path now loaded from environment variable
+- Consistent 3-tuple return from `get_closest_scheduled_time_to_now`
+
+### Fixed
+- Safe unpacking of timetable results with proper type hints
+- Edge cases causing negative ETAs after live overrides
+- Prediction failures now logged gracefully instead of crashing
+- Resource validation (route/stops) with explicit 404/400 status codes
+- Various minor bugs across services and API routes
+- Type annotations and schema consistency
+
+### Improved
+- Confidence scoring accuracy under low-data conditions
+- Internal service boundaries for easier future maintenance
+- Debuggability with better logging at key decision points
+- Overall system stability and predictability
+
+This release focuses purely on hardening the existing system. It lays solid groundwork for v2 features (authentication, real-time updates, richer  modelling).
+
+## [1.2.0] - 2026-02-14 – Backend Updates and Map Support
+
+### Added
+- Proper "bus arrived" / "bus departed" reporting with immediate server-side effect
+- Endpoint returning latest confirmed event for a route/stop
+- Instant propagation of reported events to update route/stop status for all users
+- Frontend auto-polling every 20s on route/stop views (near-live feel)
+- Smarter next-bus adjustment when timetable is missed and departure reported
+
+### Fixed
+- Negative arrival times after departure reports
+- "Bus coming in 0 min" spam when timetable stale and no live data
+
+### Changed
+- Prediction engine no longer shows impossible future times after confirmed departure
+
+### Limitations (still present)
+- Accuracy depends heavily on user reporting volume
+- No push notifications — polling only
+- Predictions remain rough without recent reports
+
+Keep reporting events — more data = smarter ETAs.
+
+## [1.1.0] - 2026-02-08
+
+### Added
 - Weighted averaging of recent journey data
 - Confidence scoring for arrival predictions
-- Clear distinction between predicted times and user-reported events/times in the UI
+- Clear visual distinction between predicted times and user-reported events in UI
 
-## Changed 
-- Predition logic now prioritises revent user data over static timetables
-- Improved fallback behaviour when user data is sparse or unavailable
+### Changed
+- Prediction logic now strongly prioritizes recent user data over static timetables
+- Improved fallback when user data is sparse or missing
 
-- Improved handling edge cases where no recent journey data exists
-- Improved creating journey process
-- Better error handling in terms of invalid data 
+### Fixed
+- Edge cases with no recent journey data
+- Journey creation process improvements
+- Better handling of invalid input data
 
+## [1.0.0] - 2026-02-01 – Initial Release
 
+### Added
+- Static timetable-based bus arrival predictions
+- Stop and route search functionality
+- Backend prediction service
+- User-reported arrival and delay events
+- Public API for fetching stop times and predictions
+- Initial frontend for viewing routes and arrivals
 
-## v1.2 — Backend Updates and map support, Feb 14, 2026
-
-## Added
-- Users can now properly report "bus arrived" / "bus departed" — server takes it seriously
-- New endpoint returns latest confirmed event for route 
-- Reported events now instantly update route/stop status for everyone else
-- Prediction no longer tells people the bus is coming in -2 min after someone already said it left
-- Frontend auto-polls every 20s when you're staring at a route/stop — feels almost live
-- If timetable is already missed and someone reports departure → we push the next bus forward instead of lying
-
-## Fixed
-- No more negative arrival times after a departure report
-- Less "bus coming in 0 min" when timetable is stale and no live data
-
-## Limitations
-- Accuracy is only good if enough people bother reporting
-- No push notifications yet — still gotta stare at the screen and wait for poll
-- Prediction still rough when no recent reports and timetable is way off
-
-Keep reporting — the more people use it, the less stupid the ETAs become.
+[1.3.0]: https://github.com/dillionhuston/RouteReality/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/dillionhuston/RouteReality/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/dillionhuston/RouteReality/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/dillionhuston/RouteReality/releases/tag/v1.0.0
