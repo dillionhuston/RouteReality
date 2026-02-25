@@ -1,0 +1,31 @@
+from pydantic import BaseModel, EmailStr, Field
+from typing import Optional
+from uuid import uuid4
+
+
+
+class CreateUser(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid4()))    
+    username: str
+    email: str
+    password: str
+
+
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+
+class AddUser(BaseModel):
+    username: str
+    email: EmailStr
+    hashed_password: str
+
+class AnonymousUserCreate(BaseModel):
+    pass
+    
+
+
+
+
