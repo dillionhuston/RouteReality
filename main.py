@@ -10,7 +10,7 @@ from app.routers.Auth import router as auth_endpoint
 app = FastAPI(
     title="Bus Tracker API",
     description="API for managing Belfast bus journeys, routes, and related data",
-    version="0.1.0"
+    version="1.3.0"
 )
 
 # CORS configuration
