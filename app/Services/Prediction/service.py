@@ -25,7 +25,6 @@ def get_prediction(
     
     now = datetime.now(timezone.utc)
 
-    # Consider adding time filters: last 3–7 days
     past_arrivals = get_user_journeys(
         db=db,
         route_id=route_id,

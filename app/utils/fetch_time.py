@@ -1,6 +1,4 @@
-# utils/fetch_time.py
-# pulls scheduled times from the CIF file for stops
-# still using the raw text parse since DB import is being worked on
+
 import os
 
 from datetime import datetime, time, timezone, timedelta
@@ -57,7 +55,7 @@ def fetch_all_scheduled_times_for_stop(stop_id: str) -> List[time]:
                 times.append(t)
 
         unique_sorted = sorted(set(times))
-        # print(f"Found {len(unique_sorted)} times for stop {stop_id}")
+
         return unique_sorted
 
     except Exception as e:
@@ -66,10 +64,10 @@ def fetch_all_scheduled_times_for_stop(stop_id: str) -> List[time]:
 
 
 def fetch_scheduled_time(route_id: str, stop_id: str) -> Optional[time]:
-    """Legacy/simple version - just returns the first time found (used in some places)"""
+    """Legacy/simple version - just returns the first time found"""
     times = fetch_all_scheduled_times_for_stop(stop_id)
     if times:
-        return times[0]  # earliest or first match - whatever
+        return times[0] 
     return None
 
 
@@ -77,7 +75,6 @@ def get_closest_scheduled_time_to_now(
     route_id: str,
     stop_id: str,
     reference_time: Optional[datetime] = None) -> Tuple[Optional[time], Optional[int], bool]:
-    logger.info("=== FETCH_TIME v3 ACTIVE – RETURNING THREE VALUES – UUID: 8f3b2d9a-7e1c-4k5m-9p0q-r2s4t6u8v0w1 ===")
     if reference_time is None:
         reference_time = datetime.now(timezone.utc)
 
@@ -97,15 +94,13 @@ def get_closest_scheduled_time_to_now(
         next_time = all_times[idx]
         full_dt = datetime.combine(ref_date, next_time, tzinfo=timezone.utc)
         mins = int((full_dt - reference_time).total_seconds() / 60)
-        return next_time, max(0, mins), False     # ← add , False
+        return next_time, max(0, mins), False    
 
-    # nothing left today → first tomorrow
+    # nothing left today  first tomorrow
     if all_times:
         next_time = all_times[0]
         tomorrow = ref_date + timedelta(days=1)
         full_dt = datetime.combine(tomorrow, next_time, tzinfo=timezone.utc)
         mins = int((full_dt - reference_time).total_seconds() / 60)
-        return next_time, max(0, mins), True      # ← add , True
-
-    # unreachable (because of earlier if not all_times), but for safety:
+        return next_time, max(0, mins), True    
     return None, None, False

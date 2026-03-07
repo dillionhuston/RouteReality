@@ -4,8 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# For now hardcode (change to env in production!)
-SECRET_KEY = "your-very-long-random-secret-key-change-this-please"  # min 32 chars
+# For now hardcode, github version
+SECRET_KEY = "a54453140dcb165786a165a508ba6aef" 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -26,6 +26,6 @@ def verify_web_token(token: str):
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        return None  # or raise exception
+        return None # raise exception?
     except jwt.InvalidTokenError:
         return None

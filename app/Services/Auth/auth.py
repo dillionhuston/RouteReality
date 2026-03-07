@@ -35,9 +35,9 @@ class AuthService:
 
     @staticmethod
     def auth_user(db: Session, user_login: UserLogin):
-        db_user = data.get_user_details(db, email=user_login.email_or_username)
+        db_user = data.get_user_details(db, email=user_login.email)
         if not db_user:
-            db_user = data.get_user_details(db, username=user_login.email_or_username)
+            db_user = data.get_user_details(db, username=user_login.email)
 
         if not db_user:
             return None

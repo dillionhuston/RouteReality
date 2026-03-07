@@ -1,599 +1,312 @@
-# Technical Documentation
+# RouteReality — Technical Documentation
 
-## System Overview
-
-This is a FastAPI-based journey tracking system for public transit. Users submit their actual journey experiences, which feed into a prediction engine that gets smarter over time. Think of it as crowdsourced transit reliability data.
-
-## Architecture
-
-### Three-Layer Design
-
-1. **API Layer** (`routes/`): FastAPI endpoints handling HTTP requests
-2. **Service Layer** (`Services/`): Business logic and data processing
-3. **Data Layer** (`models/`): SQLAlchemy ORM models and database interactions
-
-This separation keeps concerns isolated and makes testing way easier.
-
-## Database Schema
-
-### Core Tables
-
-#### routes
-```sql
-- id (String, PK): Public route identifier (e.g., "16", "2a")
-- name (String): Human-readable route name
-- direction (String): Route direction if applicable
-- official_timetable (JSON): Stored timetable data
-- timetable_last_updated (DateTime): When timetable was last refreshed
-```
-
-#### stops
-```sql
-- id (String, PK): Public stop identifier (ATCO code)
-- name (String): Stop name
-- latitude (Float): GPS latitude
-- longitude (Float): GPS longitude
-```
-
-#### route_stops
-Junction table linking routes to stops in sequence.
-
-```sql
-- route_id (String, PK, FK)
-- stop_id (String, PK, FK)
-- sequence (Integer): Order of stop on route
-- direction (String): Which direction this applies to
-```
-
-**Why composite primary key?** A stop can appear multiple times on a route (different directions or loop routes).
-
-#### journeys
-The heart of the system. Stores both user-submitted and official journey data.
-
-```sql
-- id (String, PK): UUID for internal tracking
-- route_id (String, FK): Which route
-- start_stop_id (String, FK): Where journey started
-- end_stop_id (String, FK): Intended destination
-- planned_start_time (DateTime): When user expected to start
-- start_time (DateTime): Actual start (when bus arrived)
-- end_time (DateTime): When journey completed
-- status (String): Current state (STARTED, ARRIVED, etc.)
-- created_at (DateTime): Record creation timestamp
-- official_start_time (String): Timetable scheduled start
-- official_end_time (String): Timetable scheduled end
-- predicted_status (String): Engine prediction (on_time, delayed, early)
-- predicted_arrival (String): Predicted arrival time
-- data_source (String): "user" or "official"
-- is_synthetic (Boolean): True for seeded test data
-```
-
-**Why String for times in some fields?** Official times come from external APIs as strings. We store them as-is to avoid timezone conversion issues. DateTimes are used where we control the data.
-
-## API Endpoints
-
-### Route Discovery
-
-#### GET /route/routes
-Returns all available routes. Used to populate frontend dropdowns.
-
-**Response:**
-```json
-[
-  {
-    "id": "9B-0",
-    "name": "City Center - Airport"
-  }
-]
-```
-
-**Error cases:**
-- 404: No routes in database
-
-#### GET /route/routes/{route_id}/stops
-Returns stops for a route, ordered by sequence.
-
-**Query params:** None
-
-**Response:**
-```json
-[
-  {
-    "id": "490000001",
-    "name": "Main Street",
-    "sequence": 1,
-    "direction": "outbound"
-  }
-]
-```
-
-**Implementation notes:**
-- Filters out stops with missing/invalid names
-- Warns about duplicate sequences (data quality issue)
-- Uses SQLAlchemy joinedload to avoid N+1 queries
-
-### Journey Management
-
-#### POST /journeys/start
-Create a new journey. This is step 1 of the user flow.
-
-**Request:**
-```json
-{
-  "route_id": "16",
-  "start_stop_id": "490000001",
-  "end_stop_id": "490000050",
-  "planned_start_time": "2026-01-24T09:00:00Z"  // optional
-}
-```
-
-**Response:**
-```json
-{
-  "journey_id": "550e8400-e29b-41d4-a716-446655440000",
-  "route_id": "16",
-  "start_stop_id": "490000001",
-  "predicted_status": "on_time",
-  "predicted_arrival": "2026-01-24 09:23:00",
-  "status": "STARTED"
-}
-```
-
-**What happens internally:**
-1. Validates route and stops exist in database
-2. Calls PredictionService to get initial ETA
-3. Creates journey record with status=STARTED
-4. Returns journey UUID for subsequent event submissions
-
-**Error cases:**
-- 400: Missing start or end stop
-- 404: Route or stop not found
-
-#### POST /journeys/{journey_id}/event
-Update journey status. Users call this when events happen (bus arrives, they reach their stop, etc.)
-
-**Path params:**
-- journey_id: UUID returned from /start
-
-**Request:**
-```json
-{
-  "event": "ARRIVED"  // or DELAYED, STOP_REACHED
-}
-```
-
-**Response:**
-```json
-{
-  "journey_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "ARRIVED",
-  "predicted_arrival": "2026-01-24 09:23:00",
-  "updated_at": "2026-01-24T09:05:00Z"
-}
-```
-
-**Valid state transitions:**
-- STARTED → DELAYED
-- STARTED → ARRIVED
-- DELAYED → ARRIVED
-- ARRIVED → STOP_REACHED
-
-Invalid transitions throw 400 errors.
-
-## Service Layer Deep Dive
-
-### JourneyService
-
-Main orchestrator for journey lifecycle.
-
-#### start_journey()
-```python
-def start_journey(data: StartJourney, db: Session) -> Journey
-```
-
-**Responsibilities:**
-1. Validate route and stops exist
-2. Extract official timetable times (if available)
-3. Call prediction service for initial ETA
-4. Create journey record with all fields populated
-5. Return journey object
-
-**Design decision:** We get predictions at journey creation, not on-demand. This lets us track prediction accuracy over time.
-
-### JourneyEventHandler
-
-Handles state transitions. Each event type has its own method.
-
-#### arrived()
-Marks that the bus has arrived at the starting stop. Journey is now active.
-
-**Allowed from:** STARTED, DELAYED
-
-**Side effects:**
-- Sets start_time to current UTC
-- Updates status to ARRIVED
-
-#### delayed()
-User reports the bus is delayed.
-
-**Allowed from:** STARTED only
-
-**Side effects:**
-- Updates status to DELAYED
-- Does NOT change predicted times (that happens in background)
-
-#### stop_reached()
-Journey is complete. User has reached their destination.
-
-**Allowed from:** STARTED, DELAYED, ARRIVED
-
-**Side effects:**
-- Sets end_time to current UTC
-- Updates status to STOP_REACHED
-- Marks journey as complete (used in predictions)
-
-**Why allow from STARTED?** User might start journey tracking late, after they've already boarded.
-
-#### add_event()
-Router method that dispatches to specific handlers.
-
-```python
-handlers = {
-    "ARRIVED": self.arrived,
-    "DELAYED": self.delayed,
-    "STOP_REACHED": self.stop_reached,
-}
-```
-
-Returns 400 for unsupported event types.
-
-## Prediction Engine
-
-This is where the magic happens.
-
-### Design Philosophy
-
-Real-world transit is messy. Official timetables often don't reflect reality (traffic, driver behavior, time of day). User data is noisy but accurate in aggregate. The engine balances both.
-
-### Data Quality Thresholds
-
-```python
-MIN_FOR_STATS = 5           # Minimum to use median
-MIN_TO_TRUST_USERS_ONLY = 20  # Ignore official data
-FALLBACK_MINUTES = 30       # When we have nothing
-HIGH_THRESHOLD_MINUTES = 45 # Flag as delayed
-```
-
-These are tuneable based on your transit system's characteristics.
-
-### predict_journey()
-
-```python
-def predict_journey(
-    db: Session,
-    route_id: str,
-    start_time: datetime
-) -> Tuple[datetime, str]
-```
-
-**Returns:** (predicted_arrival_time, status)
-
-**Algorithm:**
-
-1. **Sanity check:** If start_time is >24 hours in future, use fallback (probably bad data)
-
-2. **Fetch user journeys:** Get last 100 completed user journeys for this route
-   - Filters: status=STOP_REACHED, data_source=user
-   - Validates: start_time and end_time exist and are logical
-   - Computes: duration = end_time - start_time
-   - Orders by recency (recent journeys more relevant)
-
-3. **Decision tree:**
-   ```
-   if user_count >= 20:
-       use_only_user_data()
-   else:
-       fetch_official_journeys()
-       blend_user_and_official()
-   ```
-
-4. **Statistical computation:**
-   - Calculate average and median duration
-   - If we have 5+ journeys, prefer median (robust to outliers)
-   - Otherwise use average
-
-5. **Status determination:**
-   - With enough data: Compare to 75th percentile
-     - If predicted > p75 * 1.25: "delayed"
-     - If predicted < avg * 0.75: "early"
-     - Otherwise: "on_time"
-   - With sparse data: Compare to threshold
-     - If predicted > 45 min: "delayed"
-
-6. **Return:** start_time + predicted_duration
-
-### Why Median Over Average?
-
-Example: Route has 10 journeys
-- 9 journeys: ~20 minutes
-- 1 journey: 90 minutes (accident on route)
-
-Average: 27 minutes (too pessimistic)
-Median: 20 minutes (typical experience)
-
-Median better represents "what will probably happen."
-
-### Data Source Blending
-
-```python
-if user_count >= 20:
-    source = "user_only"
-    durations = user_durations
-else:
-    source = "blended"
-    durations = user_durations + official_durations
-```
-
-**Rationale:** Official timetables are optimistic. With enough real data, we don't need them. With sparse data, they provide a baseline.
-
-### Logging Strategy
-
-Every prediction logs:
-```
-[PREDICTION] {source} | {count} journeys | ETA +{minutes} min | status: {status}
-```
-
-This makes debugging easy and lets us monitor prediction quality in production.
-
-## Data Model Design Decisions
-
-### String IDs vs UUIDs
-
-- **Routes/Stops:** Use public identifiers (route "16", ATCO codes)
-  - Users recognize these
-  - External APIs use these
-  - Frontend can construct URLs
-  
-- **Journeys:** Use UUIDs
-  - Internal tracking only
-  - Prevents enumeration attacks
-  - Globally unique across databases
-
-### Nullable Fields Strategy
-
-- `end_stop_id`: Nullable (user might not know final stop)
-- `start_time`: Nullable until bus arrives
-- `end_time`: Nullable until journey completes
-- `planned_start_time`: Nullable (might start journey spontaneously)
-
-This allows partial data entry and progressive enhancement.
-
-### Timezone Handling
-
-All DateTimes stored in UTC. Frontend handles local timezone conversion.
-
-**Why?** Daylight saving time is a nightmare. UTC is unambiguous. Transit systems cross timezones.
-
-### JSON for Timetables
-
-`official_timetable` is JSON because:
-- Schema varies by transit agency API
-- We don't query it (just display)
-- Flexibility for future data sources
-
-Downside: Can't index or query efficiently. If we need to, we'd normalize it later.
-
-## Error Handling Strategy
-
-### HTTP Status Codes
-
-- **400:** Client error (bad request, invalid state transition)
-- **404:** Resource not found (route, stop, journey)
-- **500:** Server error (database issues, etc.)
-
-### Validation Layers
-
-1. **Pydantic schemas:** Type validation at API boundary
-2. **Business logic:** State machine validation in services
-3. **Database constraints:** Foreign keys, not null constraints
-
-### Example: State Transition Validation
-
-```python
-allowed = {"STARTED", "DELAYED"}
-if journey.status not in allowed:
-    raise HTTPException(
-        status_code=400,
-        detail=f"Cannot mark as ARRIVED from status: {journey.status}"
-    )
-```
-
-Explicit is better than implicit. Tell users exactly why their request failed.
-
-## Performance Considerations
-
-### N+1 Query Prevention
-
-```python
-# BAD: Triggers query for each route_stop
-for rs in route_stops:
-    print(rs.stop.name)  # Loads stop separately
-
-# GOOD: Single query with join
-route_stops = (
-    db.query(RouteStop)
-    .options(joinedload(RouteStop.stop))
-    .filter(...)
-    .all()
-)
-```
-
-### Query Limits
-
-Prediction queries limited to recent data:
-- User journeys: Last 100
-- Official journeys: Last 50
-
-Prevents scanning entire table as data grows.
-
-### Index Strategy
-
-Should have indexes on:
-- `journeys.route_id` (frequently filtered)
-- `journeys.status` (state queries)
-- `journeys.data_source` (prediction filtering)
-- `journeys.start_time` (ordering for recency)
-
-### Future Optimization
-
-When dataset grows:
-- Add pagination to /routes and /stops
-- Cache prediction results (Redis)
-- Archive old completed journeys
-- Pre-compute route statistics
-
-## Testing Strategy
-
-### What Should Be Tested
-
-1. **API endpoints:** Request/response validation
-2. **State machine:** All valid and invalid transitions
-3. **Prediction engine:** Different data volumes and edge cases
-4. **Data validation:** Malformed inputs
-
-### Test Data Setup
-
-Need seed data for:
-- Routes with various stop counts
-- User journeys (completed and in-progress)
-- Official journey data
-- Edge cases (very short/long journeys)
-
-### Example Test Cases
-
-```python
-def test_cannot_arrive_when_already_completed():
-    # Journey with status=STOP_REACHED
-    # POST /journeys/{id}/event with event=ARRIVED
-    # Should return 400
-
-def test_prediction_with_no_data():
-    # New route with no journey history
-    # Should return 30min fallback
-
-def test_prediction_prefers_recent_data():
-    # 50 old journeys: 30min average
-    # 10 recent journeys: 45min average
-    # Should weight recent data more heavily
-```
-
-## Security Considerations
-
-### Current State (MVP)
-
-- No authentication
-- No rate limiting
-- No input sanitization beyond Pydantic validation
-
-  Got to add these before prod
-
-### Before Production
-
-1. **Add authentication:** JWT tokens or API keys
-2. **Rate limiting:** Prevent abuse of prediction endpoint
-3. **Input validation:** Sanitize all string inputs
-4. **CORS configuration:** Restrict to known frontends
-5. **SQL injection:** SQLAlchemy parameterization handles this, but audit raw queries
-6. **Journey ownership:** Users should only modify their own journeys
-
-## Deployment Considerations
-
-### Environment Variables
-
-Required:
-```
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-```
-
-Optional:
-```
-LOG_LEVEL=INFO
-API_HOST=0.0.0.0
-API_PORT=8000
-```
-
-### Database Migrations
-
-Use Alembic for schema changes:
-```bash
-alembic revision --autogenerate -m "description"
-alembic upgrade head
-```
-
-### Scaling Strategy
-
-Current bottleneck will be prediction queries. Solutions:
-1. Cache predictions by route (5min TTL)
-2. Pre-compute statistics nightly
-3. Read replicas for prediction queries
-4. Horizontal scaling (stateless API)
-
-## Monitoring and Observability
-
-### What to Monitor
-
-- **Prediction accuracy:** Compare predicted vs actual journey times
-- **API latency:** P50, P95, P99 response times
-- **Database query times:** Slow query log
-- **Error rates:** 4xx and 5xx by endpoint
-- **User journey completion rate:** % of STARTED that reach STOP_REACHED
-
-### Logging
-
-Current logging:
-- Prediction decisions (source, count, duration)
-- Data quality warnings (duplicate sequences, missing stops)
-- Journey state transitions
-
-Add in production:
-- User IDs (when auth added)
-- Request IDs for tracing
-- Performance metrics
-
-## Known Issues and Limitations
-
-1. **No time-of-day patterns:** 8am journey and 8pm journey treated the same
-2. **No day-of-week patterns:** Monday commute vs Sunday treated the same  
-3. **No outlier filtering:** Single 3-hour journey due to accident affects predictions
-4. **No confidence intervals:** We say "20 minutes" but not "18-22 minutes"
-5. **No live tracking:** Can't update predictions as journey progresses
-6. **Direction not fully utilized:** Stored but not factored into predictions
-
-## Future Enhancements
-
-### Phase 2: Time-Based Patterns
-Segment journeys by:
-- Hour of day (rush hour vs off-peak)
-- Day of week (weekday vs weekend)
-- Season (summer vs winter schedules)
-
-### Phase 3: Real-Time Updates
-- WebSocket connections for live journey updates
-- Recalculate ETA as journey progresses
-- Show other users' active journeys on same route
-
-### Phase 4: Advanced Analytics
-- Route reliability scores
-- Weather impact correlation
-- Special event detection (concerts, sports)
-
-### Phase 5: Machine Learning
-Replace statistical predictions with ML:
-- Feature engineering (time, weather, traffic)
-- Train on historical journeys
-- Continuous model retraining
-- A/B test against statistical baseline
+Crowdsourced bus arrival prediction system for Belfast.
+Real‑time user reports are combined with historical patterns and static timetables to provide accurate, continuously updated arrival estimates. Live updates are pushed to subscribed clients via WebSockets.
 
 ---
 
-This documentation reflects the current implementation. Update as the system evolves.
+## Stack
+
+- Python 3.12 / FastAPI
+- PostgreSQL via SQLAlchemy ORM
+- Pydantic v2 for request validation
+- WebSockets for real-time client updates
+
+---
+
+## 1. Introduction
+
+RouteReality is a platform that demonstrates how crowdsourced data can improve public transport information. Passengers report when they board a bus; the system aggregates these reports, maintains a shared anchor of the best known arrival time for each stop on a given trip, and broadcasts updated predictions to all interested clients. The goal is to offer predictions that are more reliable than static timetables alone, especially in the face of real‑world delays.
+
+
+## 2. System Architecture
+
+The system follows a modular, service‑oriented design inside a monolithic FastAPI application.
+Key components:
+
+FastAPI – serves REST endpoints and handles WebSocket connections.
+
+PostgreSQL – stores journeys, events, arrival anchors, prediction snapshots, and historical data.
+
+SQLAlchemy ORM – abstracts database interactions.
+
+Pydantic v2 – validates request/response schemas.
+
+WebSockets – provide real‑time broadcasts to clients subscribed to a specific service.
+
+All prediction logic is triggered by user‑reported events for now. The arrival time for a stop is derived from the most reliable source available (fresh user report, historical average, or static timetable). Confidence scores reflect the expected accuracy of the prediction.
+```
+app/
+├── routers/
+│   ├── Journey.py          # journey lifecycle endpoints
+│   └── Broadcast.py        # WebSocket + ConnectionManager
+├── Services/
+│   ├── journeyService/
+│   │   ├── journey_service.py     # start_journey orchestration
+│   │   └── eventHandler.py        # state machine handlers
+│   └── v2/
+│       ├── arrival/
+│       │   └── arrival_reporting_service.py
+│       ├── anchor/
+│       │   └── best_arrival_anchor_service.py
+│       └── snapshot/
+│           └── snapshot.py
+├── models/
+│   ├── Journey.py
+│   ├── Event.py
+│   ├── StopArrivalAnchors.py
+│   └── PredictionSnapshot.py
+├── schemas/
+│   └── journey.py
+└── utils/
+    └── fetch_time.py       # timetable lookup
+```
+
+---
+
+## Database Schema
+
+### journeys
+| Column | Type | Notes |
+|---|---|---|
+| id | VARCHAR PK | UUID |
+| service_id | VARCHAR | e.g. `10A-I_20260304_1729` |
+| route_id | VARCHAR FK | |
+| start_stop_id | VARCHAR FK | ATCO code |
+| end_stop_id | VARCHAR FK | ATCO code |
+| status | VARCHAR | STARTED / ARRIVED / DELAYED / STOP_REACHED |
+| planned_start_time | TIMESTAMPTZ | |
+| official_start_time | TIMESTAMPTZ | from timetable |
+| predicted_arrival | TIMESTAMPTZ | updated on each event |
+| confidence | FLOAT | 0.0 – 1.0 |
+| ended_at | TIMESTAMPTZ | null until STOP_REACHED |
+| created_at / updated_at | TIMESTAMPTZ | |
+
+### stop_arrival_anchors
+One row per `(service_id, stop_id)`. Updated on every arrival report.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | VARCHAR PK | UUID |
+| service_id | VARCHAR | composite unique with stop_id |
+| stop_id | VARCHAR | |
+| best_arrival_time | TIMESTAMPTZ | |
+| confidence | FLOAT | |
+| report_count | INTEGER | |
+| last_reported_at | TIMESTAMPTZ | |
+| source | VARCHAR | "user_report" |
+
+**Important:** unique constraint must be on `(service_id, stop_id)` together, not `service_id` alone.
+
+### prediction_snapshots
+Immutable audit log. One row per prediction event.
+
+| Column | Type |
+|---|---|
+| id | VARCHAR PK |
+| journey_id | VARCHAR FK |
+| service_id | VARCHAR |
+| stop_id | VARCHAR |
+| static_scheduled | TIMESTAMPTZ |
+| predicted_arrival | TIMESTAMPTZ |
+| user_reported_arrival | TIMESTAMPTZ |
+| best_trusted_arrival | TIMESTAMPTZ |
+| confidence | FLOAT |
+| source_summary | VARCHAR |
+| calculated_at | TIMESTAMPTZ |
+
+### journey_events
+| Column | Type |
+|---|---|
+| id | VARCHAR PK |
+| journey_id | VARCHAR FK |
+| stop_id | VARCHAR FK |
+| type | VARCHAR |
+| reported_time | TIMESTAMPTZ |
+| created_at | TIMESTAMPTZ |
+
+---
+
+## API Reference
+
+### POST /journeys/start
+Start a new journey. Runs initial timetable prediction immediately.
+
+**Request**
+```json
+{
+  "route_id": "10A-I",
+  "start_stop_id": "700000001429",
+  "end_stop_id": "700000001789",
+  "planned_start_time": "2026-03-04T17:00:00Z"
+}
+```
+
+**Response 201**
+```json
+{
+  "journey_id": "273ae664-...",
+  "service_id": "10A-I_20260304_1729",
+  "status": "STARTED",
+  "predicted_arrival": "2026-03-04T17:23:00Z",
+  "confidence": 0.35
+}
+```
+
+---
+
+### POST /journeys/{journey_id}/event
+Report an event on an active journey.
+
+**Request**
+```json
+{
+  "event": "ARRIVED",
+  "stop_id": "700000001429"
+}
+```
+
+Valid events: `ARRIVED` `DELAYED` `STOP_REACHED`
+
+**Response 200**
+```json
+{
+  "journey_id": "273ae664-...",
+  "status": "ARRIVED",
+  "predicted_arrival": "2026-03-04T17:29:45Z",
+  "confidence": 0.85,
+  "last_event": "ARRIVED",
+  "updated_at": "2026-03-04T17:29:46Z",
+  "message": "Recorded ARRIVED"
+}
+```
+
+**Error responses**
+
+| Code | Reason |
+|---|---|
+| 400 | Invalid state transition |
+| 404 | Journey not found or not active |
+| 409 | Duplicate ARRIVED on same journey |
+| 422 | Invalid event type or stop_id |
+
+---
+
+### WebSocket /ws/service/{service_id}
+Subscribe to live updates for a service. Connect once, receive broadcasts as arrivals are reported.
+
+**Broadcast payload**
+```json
+{
+  "type": "arrival_update",
+  "journey_id": "273ae664-...",
+  "stop_id": "700000001429",
+  "predicted_arrival": "2026-03-04T17:29:45Z",
+  "confidence": 0.85,
+  "report_count": 3,
+  "timestamp": "2026-03-04T17:29:46Z",
+  "status": "ARRIVED"
+}
+```
+
+---
+
+### GET /ws/stats
+Returns active WebSocket connections per channel. Useful for debugging.
+
+```json
+{
+  "service:10A-I_20260304_1729": 2
+}
+```
+
+---
+
+## State Machine
+
+```
+STARTED ──→ ARRIVED ──→ STOP_REACHED
+   │                         ↑
+   └──→ DELAYED ─────────────┘
+```
+
+`_get_owned_active_journey` filters on `status IN ('STARTED', 'ARRIVED', 'DELAYED')` and `ended_at IS NULL`. Completed journeys return 404 automatically — no explicit terminal state check needed.
+
+---
+
+## Prediction Logic
+
+Priority order on every event:
+
+1. **Fresh anchor** — `last_reported_at` within 60 minutes. Confidence +0.15.
+2. **Historical hour-of-day average** — from `historical_delays`, minimum 5 samples. Confidence +0.05.
+3. **Static timetable** — `get_closest_scheduled_time_to_now()`. No boost.
+
+Confidence formula:
+```
+base (0.30 – 0.75 depending on source)
++ 0.15  anchor used
++ 0.05  historical used
+- 0.08  per DELAYED event on this journey
+
+floor: 0.25  ceiling: 0.98
+```
+
+Tolerance bands when blending report vs timetable:
+- Within 12 min → use reported time, confidence 0.85
+- 13–25 min → use reported time, confidence 0.65
+- Over 25 min → use timetable, confidence 0.40
+
+---
+
+## Service Responsibilities
+
+**`JourneyEventHandler`** — owns all status transitions. The only place `journey.status` is written.
+
+**`ArrivalReportingService`** — records what happened. Updates anchor, saves snapshot, writes `predicted_arrival` and `confidence` back to journey, broadcasts. Does not touch `journey.status` or `journey.ended_at`.
+
+**`BestArrivalAnchorService`** — upserts the shared anchor for `(service_id, stop_id)`. If anchor is under 120 minutes old, overwrites with new report. If stale, only updates if new confidence is higher.
+
+**`ConnectionManager`** — manages WebSocket channels. Broadcasts use `asyncio.gather` across all subscribers concurrently. Dead connections pruned after each broadcast.
+
+---
+
+## Running Locally
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Set environment variable
+export DATABASE_URL=postgresql://user:pass@localhost:5432/routereality
+
+# Run migrations
+alembic upgrade head
+
+# Start server
+uvicorn app.main:app --reload
+
+# Run integration tests
+python -m app.tests.full_loop_test
+```
+
+---
+
+## Known Limitations
+
+- Historical patterns split by hour only — no day-of-week segmentation yet
+- Single stop per journey — multi-stop chaining not implemented
+- Confidence uses additive boosts, not variance-weighted scoring
+- No authentication on any endpoint
+- No caching — all predictions hit Postgres directly
+
+---
+
+## Planned
+
+- Day-type patterns (weekday / saturday / sunday) in historical table
+- `delay_count` column on `Journey` for per-journey confidence penalty
+- Variance-based confidence scoring
+- Multi-stop journey support with `current_stop_id`
+- Redis cache for anchors and historical lookups
+- JWT auth

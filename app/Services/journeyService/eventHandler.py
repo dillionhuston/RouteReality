@@ -103,7 +103,6 @@ class JourneyEventHandler:
         journey.status = JourneyEventType.EVENT_TYPE_STOP_REACHED
         journey.end_time = datetime.now(timezone.utc)
 
-        # After reaching a stop,  predict next / final
         JourneyEventHandler.update_prediction(journey)
 
         db.commit()

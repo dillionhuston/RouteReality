@@ -7,3 +7,4 @@ passlib[bcrypt]
 PyJWT
 python-dotenv
 requests
+bcrypt

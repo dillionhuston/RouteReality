@@ -81,7 +81,6 @@ def journeys_for_stop(
                 "route_id": j.route_id,
                 "status": j.status,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
-                #"delay_minutes": j.delay_minutes,
                 "predicted_arrival": j.predicted_arrival,
                 "minutes_remaining": minutes_left(j.predicted_arrival)
             }

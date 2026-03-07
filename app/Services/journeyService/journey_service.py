@@ -1,140 +1,152 @@
-# services/journey_service.py
-# Handles starting journeys and finding active ones
-# Still a bit scrappy but works in prod
-
-from uuid import uuid4, UUID
+from datetime import datetime, timezone, timedelta
+from uuid import uuid4
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
 
 from app.models.Route import Route, Stop
 from app.models.Journey import Journey
 from app.schemas.journey import StartJourney, JourneyEventType
-
-# Grab the timetable helper we actually have
 from app.utils.fetch_time import get_closest_scheduled_time_to_now
+from app.Services.v2.prediction.prediction_service import PredictionService
+from app.Services.v2.snapshot.snapshot import SnapshotService
+from app.utils.logger.logger import get_logger
+from app.routers.Broadcast import broadcast_service_update  
 
-from app.Services.Prediction.service import get_prediction
+logger = get_logger()
 
 
 class JourneyService:
     """Service for creating and querying journeys."""
 
     @staticmethod
-    def start_journey(data: StartJourney, db: Session) -> Journey:
-        """Start off a new journey, try to get real timetable time, predict arrival based on recent journey data and events."""
-        # fetch route
+    async def start_journey(data: StartJourney, db: Session) -> dict:
         route = db.query(Route).filter(Route.id == data.route_id).first()
         if not route:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Route {data.route_id} not found")
+            raise HTTPException(404, f"Route {data.route_id} not found")
 
-        # start stop
         start_stop = db.query(Stop).filter(Stop.id == data.start_stop_id).first()
         if not start_stop:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Start stop {data.start_stop_id} not found")
+            raise HTTPException(404, f"Start stop {data.start_stop_id} not found")
 
-        # end stop (optional)
         end_stop = None
         if data.end_stop_id:
             end_stop = db.query(Stop).filter(Stop.id == data.end_stop_id).first()
             if not end_stop:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"End stop {data.end_stop_id} not found")
+                raise HTTPException(404, f"End stop {data.end_stop_id} not found")
 
-        # starting point time. User input or now
         planned = data.planned_start_time or datetime.now(timezone.utc)
         if planned.tzinfo is None:
             planned = planned.replace(tzinfo=timezone.utc)
 
         official_start_str = planned.isoformat()
 
-        # Try to get actual next bus time from CIF
-        scheduled_time = None
-        is_tomorrow = False
-        minutes_until = None
-
         result = get_closest_scheduled_time_to_now(
-                route_id=data.route_id,
-                stop_id=data.start_stop_id,
-                reference_time=planned,
-                )
-        print(f"DEBUG - Return value type: {type(result)}")
-        print(f"DEBUG - Return value length: {len(result) if hasattr(result, '__len__') else 'not a sequence'}")
-        print(f"DEBUG - Return value: {result}")
-
-        # Then unpack
-        scheduled_time, minutes_until, is_next_day = result
-        
-        if scheduled_time:
+            route_id=data.route_id,
+            stop_id=data.start_stop_id,
+            reference_time=planned,
+        )
+        scheduled_time = None
+        if result:
+            scheduled_time, _, _ = result
+            if scheduled_time:
                 sched_dt = datetime.combine(planned.date(), scheduled_time, tzinfo=timezone.utc)
-                if is_tomorrow:
-                    sched_dt += timedelta(days=1)
-
                 if sched_dt > planned:
                     planned = sched_dt
                     official_start_str = planned.isoformat()
+        else:
+            logger.warning("No scheduled time found, using planned time")
 
-        # Get prediction, pass what we have
-        predicted_result = get_prediction(
-            db=db,
-            route_id=data.route_id,
-            stop_id=data.end_stop_id,
-            static_dt=scheduled_time )
-        
-        predicted_arrival = predicted_result.get("predicted_arrival") 
-        confidence = predicted_result.get("confidence")
-
-        # Add the journey
+        pred_svc = PredictionService()
+        eta = None
+        confidence = 0.3
+        try:
+            eta, confidence = pred_svc.get_prediction(
+                db=db,
+                route_id=data.route_id,
+                target_stop_id=data.start_stop_id,
+                planned_start_time=planned
+            )
+        except Exception as e:
+            logger.error(f"Initial prediction failed: {e}")
+        journey_id = str(uuid4())
         journey = Journey(
-            id=str(uuid4()),
+            id=journey_id,
+            service_id=f"{data.route_id}_{datetime.now().strftime('%Y%m%d_%H%M')}",
             route_id=data.route_id,
             start_stop_id=data.start_stop_id,
             end_stop_id=data.end_stop_id,
             planned_start_time=planned,
-            start_time=None,
-            status=JourneyEventType.EVENT_TYPE_STARTED,
+            status="STARTED",  # ← fixed: plain string
             created_at=datetime.now(timezone.utc),
-            predicted_status="PENDING",  # will get updated later hopefully
-            predicted_arrival=predicted_arrival,
             official_start_time=official_start_str,
-            official_end_time=(
-                route.official_timetable.get("end_time")
-                if hasattr(route, "official_timetable") and route.official_timetable
-                else None
-            ),
+            predicted_arrival=eta,
+            confidence=confidence
         )
-
         db.add(journey)
         db.commit()
         db.refresh(journey)
-        return journey
 
-    @staticmethod
-    def get_active_journey(journey_id: UUID, db: Session) -> Journey:
-        """Find a journey that's still going (no end time)."""
-        journey = (
-            db.query(Journey)
-            .filter(
-                Journey.id == journey_id,
-                Journey.status.in_([
-                    JourneyEventType.EVENT_TYPE_STARTED,
-                    JourneyEventType.EVENT_TYPE_DELAYED,
-                    JourneyEventType.EVENT_TYPE_ARRIVED,
-                ]),
-                Journey.end_time.is_(None),
+        # Snapshot
+        try:
+            SnapshotService.create_snapshot(
+                db=db,
+                journey_id=journey.id,
+                service_id=journey.service_id,
+                stop_id=data.start_stop_id,
+                user_reported_arrival=None,
+                static_scheduled=planned,
+                best_trusted_arrival=eta or planned,
+                predicted_arrival=eta,
+                confidence=confidence            )
+            db.commit()
+        except Exception as e:
+            logger.error(f"Initial snapshot failed: {e}")
+            db.rollback()
+
+       # Broadcast 
+        try:
+            await broadcast_service_update(
+                journey.service_id,
+                {
+                    "type": "journey_start",
+                    "journey_id": journey_id,
+                    "status": "STARTED",
+                    "planned_start": planned.isoformat(),
+                    "predicted_arrival": eta.isoformat() if eta else None,
+                    "confidence": confidence,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
             )
-            .one_or_none()
-        )
+        except Exception as e:
+            logger.error(f"Broadcast failed on start: {e}")
+
+        logger.info(f"Start success - journey_id: {journey_id}, status: STARTED")
+
+        return {
+            "journey_id": journey_id,
+            "service_id": journey.service_id,
+            "status": "STARTED",
+            "planned_start_time": planned.isoformat(),
+            "predicted_arrival": eta.isoformat() if eta else None,
+            "confidence": confidence
+        }
+    
+    @staticmethod
+    def get_active_journey(journey_id: str, db: Session) -> Journey:
+        """Find a journey that's still going (no end time)."""
+        journey = db.query(Journey).filter(
+            Journey.id == journey_id,
+            Journey.ended_at.is_(None),
+            Journey.status.in_([
+                JourneyEventType.STARTED.value,
+                JourneyEventType.ARRIVED.value,
+                JourneyEventType.DELAYED.value,
+            ])
+        ).first()
 
         if journey is None:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail=f"No active journey found for {journey_id}"
             )
 

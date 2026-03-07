@@ -83,13 +83,13 @@ def predict_bus_time(
 
         age_min = (now - latest_arr).total_seconds() / 60
 
-        if age_min <= 5:  # very fresh → bus probably just left or boarding
+        if age_min <= 5:  # very fresh - bus probably just left or boarding
             pred_time = latest_arr + timedelta(minutes=1)
             confidence = 0.88
             if age_min <= 2.5:
                 return pred_time, confidence  # trust it a lot
 
-        elif age_min <= 18:  # reasonable recent → bus left
+        elif age_min <= 18:  # reasonable recent - bus left
             # fall through to timetable + crowd
             pass
         else:
@@ -123,7 +123,7 @@ def predict_bus_time(
             pred_time = sched
             confidence = sched_conf
 
-    # 4. Delay reports → add buffer only if prediction looks sane 
+    # 4. Delay reports - add buffer only if prediction looks sane 
     delays = sum(1 for e in user_events if e["type"] == "DELAYED")
     if delays >= 1 and (pred_time - now).total_seconds() / 60 < 35:
         extra_min = 4 + delays * 3.5

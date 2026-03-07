@@ -1,6 +1,4 @@
-# services/prediction/data.py
-# pulls user events, past arrivals and scheduled time
-# feeds into the prediction logic
+
 
 from typing import List, Dict, Optional
 from datetime import datetime, timezone, timedelta, time
@@ -11,12 +9,11 @@ from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 
 from app.models.Journey import Journey
-from app.utils.fetch_time import fetch_scheduled_time  # CIF fallback
+from app.utils.fetch_time import fetch_scheduled_time 
 
 #Checks timestamp  making sure it UTC 
 def _to_utc(dt:datetime) -> datetime:
     if dt.tzinfo is None:
-        #treat naice datetime as utc
         return dt.replace(tzinfo=timezone.utc)
     
     return dt.astimezone(timezone.utc)
@@ -69,7 +66,6 @@ def get_recent_user_events(
     scheduled = fetch_scheduled_time(route_id, stop_id)
 
     if scheduled:
-    # scheduled can be datetime (normalize to UTC) or time (used directly in adjust_timetable_time)
         if isinstance(scheduled, datetime):
             scheduled_utc = _to_utc(scheduled)
         elif isinstance(scheduled, time):
@@ -88,8 +84,6 @@ def get_recent_user_events(
             "time": None,
             "source": "no_timetable"
         })
-
-    # print(f"Found {len(events)} events for {route_id} at {stop_id}")
     return events
 
 
@@ -127,5 +121,4 @@ def get_user_journeys(
         arrival_time = _to_utc(j.start_time or j.created_at)
         arrivals.append(arrival_time)
 
-    # print(f"Found {len(arrivals)} past arrivals for {route_id}/{stop_id}")
     return arrivals

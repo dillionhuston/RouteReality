@@ -1,4 +1,3 @@
-# Example in your router file
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.models.Database import get_db
