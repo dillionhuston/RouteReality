@@ -40,7 +40,7 @@ async def start_journey(journey: StartJourney, db: Session = Depends(get_db)) ->
         if new_j is None:
             raise ValueError("JourneyService returned None")
         logger.info(f"New journey started: {new_j['journey_id']} route={journey.route_id}")
-
+        return new_j
     # If any errors let 400/404 pass through, as it was being blocked internally if we did not have
     except HTTPException:
         raise 

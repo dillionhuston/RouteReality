@@ -1,11 +1,15 @@
 """Entry file for Bus tracker API"""
 
+import asyncio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.Journey import router as journey_endpoint
 from app.routers.Route import router as routes_endpoint
 from app.routers.status import router as status_endpoint
 from app.routers.Auth import router as auth_endpoint
+from app.routers.Broadcast import router as broadcast_endpoint
+
+from app.Services.journeyService.eventHandler import set_main_loop
 
 app = FastAPI(
     title="Bus Tracker API",
@@ -26,6 +30,12 @@ app.include_router(journey_endpoint)
 app.include_router(routes_endpoint)
 app.include_router(status_endpoint)
 app.include_router(auth_endpoint)
+app.include_router(broadcast_endpoint)
+
+@app.on_event("startup")
+async def startup():
+    app.state.loop = asyncio.get_event_loop()
+    set_main_loop(asyncio.get_event_loop())  
 
 @app.get("/")
 async def root():
