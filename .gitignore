@@ -1,4 +1,6 @@
 .env
-__pycache__/
+pycache/
+
 /initdb.py
 ./initdb.py
+.pyc

@@ -10,10 +10,9 @@ from app.utils.fetch_time import get_closest_scheduled_time_to_now
 from app.Services.v2.prediction.prediction_service import PredictionService
 from app.Services.v2.snapshot.snapshot import SnapshotService
 from app.utils.logger.logger import get_logger
-from app.routers.Broadcast import broadcast_service_update  
+from app.routers.Broadcast import broadcast_service_update
 
 logger = get_logger()
-
 
 class JourneyService:
     """Service for creating and querying journeys."""
@@ -68,6 +67,14 @@ class JourneyService:
             )
         except Exception as e:
             logger.error(f"Initial prediction failed: {e}")
+
+        # Fallback if prediction is None
+        if eta is None:
+            default_duration = timedelta(minutes=20)   
+            eta = planned + default_duration
+            confidence = 0.1
+            logger.info(f"Using fallback ETA: {eta}")
+
         journey_id = str(uuid4())
         journey = Journey(
             id=journey_id,
@@ -76,7 +83,7 @@ class JourneyService:
             start_stop_id=data.start_stop_id,
             end_stop_id=data.end_stop_id,
             planned_start_time=planned,
-            status="STARTED",  # ← fixed: plain string
+            status="STARTED",
             created_at=datetime.now(timezone.utc),
             official_start_time=official_start_str,
             predicted_arrival=eta,
@@ -97,24 +104,23 @@ class JourneyService:
                 static_scheduled=planned,
                 best_trusted_arrival=eta or planned,
                 predicted_arrival=eta,
-                confidence=confidence            )
+                confidence=confidence
+            )
             db.commit()
         except Exception as e:
             logger.error(f"Initial snapshot failed: {e}")
             db.rollback()
 
-       # Broadcast 
+        
         try:
+            minutes_remaining = int((eta - datetime.now(timezone.utc)).total_seconds() / 60) if eta else None
             await broadcast_service_update(
                 journey.service_id,
                 {
-                    "type": "journey_start",
-                    "journey_id": journey_id,
-                    "status": "STARTED",
-                    "planned_start": planned.isoformat(),
+                    "current_status": "STARTED",
                     "predicted_arrival": eta.isoformat() if eta else None,
-                    "confidence": confidence,
-                    "timestamp": datetime.now(timezone.utc).isoformat()
+                    "minutes_remaining": minutes_remaining,
+                    "message": "Journey started"
                 }
             )
         except Exception as e:
@@ -130,7 +136,7 @@ class JourneyService:
             "predicted_arrival": eta.isoformat() if eta else None,
             "confidence": confidence
         }
-    
+
     @staticmethod
     def get_active_journey(journey_id: str, db: Session) -> Journey:
         """Find a journey that's still going (no end time)."""

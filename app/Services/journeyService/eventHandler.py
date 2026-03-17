@@ -9,6 +9,10 @@ from app.utils.logger import logger
 from app.models.Journey import Journey
 from app.schemas.journey import JourneyEventType
 from app.Services.Prediction.service import get_prediction
+from app.Services.push_service.push_service import send_notifications_to_service
+
+from app.models.Database import SessionLocal
+from app.models.PushSubscription import PushSubscription
 
 logger = logger.get_logger()
 
@@ -18,18 +22,18 @@ def set_main_loop(loop: asyncio.AbstractEventLoop) -> None:
     global _main_loop
     _main_loop = loop
 
-def _fire_broadcast(route_id: str, payload: dict) -> None:
+    
+def _fire_broadcast(service_id: str, payload: dict) -> None:
     if _main_loop is None:
         logger.warning("Broadcast skipped: main loop not set")
         return
     try:
         asyncio.run_coroutine_threadsafe(
-            broadcast_service_update(route_id, payload),
+            broadcast_service_update(service_id, payload),
             _main_loop
         )
     except Exception as e:
         logger.warning(f"Broadcast failed (non-critical): {e}")
-
 
 class JourneyEventHandler:
 
@@ -75,12 +79,24 @@ class JourneyEventHandler:
         db.commit()
         db.refresh(journey)
 
-        _fire_broadcast(journey.route_id, {
+        _fire_broadcast(journey.service_id, {
             "type": "BUS_ARRIVED",
             "message": "Bus has arrived at this stop",
             "route_id": journey.route_id,
             "stop_id": journey.start_stop_id,
         })
+        try:
+            db_session = SessionLocal()
+            send_notifications_to_service(
+                db=db_session,
+                service_id=journey.service_id,
+                title=f"Bus {journey.route_id} arrived",
+                body=f"The bus has arrived at stop {journey.start_stop_id}.",
+                url=f"/tracking?service={journey.service_id}"
+            )
+            db_session.close()
+        except Exception as e:
+            logger.warning(f"Push notification sending failed: {e}")
 
         return journey
 
@@ -117,13 +133,25 @@ class JourneyEventHandler:
         db.commit()
         db.refresh(journey)
 
-        _fire_broadcast(journey.route_id, {
+        _fire_broadcast(journey.service_id, {
             "type": "BUS_DELAYED",
             "message": "Delay reported on this route",
             "route_id": journey.route_id,
             "stop_id": journey.start_stop_id,
         })
 
+        try:
+            db_session = SessionLocal()
+            send_notifications_to_service(
+                db=db_session,
+                service_id=journey.service_id,
+                title=f"Bus {journey.route_id} delayed",
+                body=f"The bus has been delayed at stop {journey.start_stop_id}.",
+                url=f"/tracking?service={journey.service_id}"
+            )
+            db_session.close()
+        except Exception as e:
+            logger.warning(f"Push notification sending failed: {e}")
         return journey
 
     @staticmethod
