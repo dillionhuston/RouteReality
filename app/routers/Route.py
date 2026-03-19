@@ -7,12 +7,17 @@ from app.models.Route import Route, RouteStop
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.utils.logger import logger
 
+from app.dependencies.get_current_user import get_current_user
+from app.models.User import User
+
 router = APIRouter(prefix="/route", tags=["Routes"])
 logger = logger.get_logger()
 
 
-@router.get("/routes", response_model=List[RouteOut])
-def get_routes(db: Session = Depends(get_db)):
+@router.get("/routes",response_model=List[RouteOut])
+def get_routes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)):
     """
     Return all routes with first stop lat/lon for dropdowns or maps.
     """
@@ -45,7 +50,10 @@ def get_routes(db: Session = Depends(get_db)):
 
 
 @router.get("/{route_id}/stops", response_model=List[StopsPerRoute])
-def get_stops_per_route(route_id: str, db: Session = Depends(get_db)):
+def get_stops_per_route(
+    route_id: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)):
     """
     Get all stops for a route, ordered by sequence.
     Skips stops without proper name or missing stop object.

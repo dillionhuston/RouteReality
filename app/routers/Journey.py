@@ -8,7 +8,9 @@ from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
 from app.utils.logger.logger import get_logger
 from app.Services.push_service.push_service import send_notifications_to_service
-from app.routers.Broadcast import broadcast_service_update   
+from app.routers.Broadcast import broadcast_service_update  
+from app.dependencies.get_current_user import get_current_user
+from app.models.User import User 
 
 logger = get_logger(__name__)
 
@@ -20,7 +22,11 @@ last_request_time: dict[UUID, datetime] = {}
 router = APIRouter(prefix="/journeys", tags=["Journey"])
 
 @router.post("/start")
-async def start_journey(journey: StartJourney, db: Session = Depends(get_db)) -> dict:
+async def start_journey(
+    journey: StartJourney,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)) -> dict:
+
     if not journey.start_stop_id or not journey.end_stop_id:
         raise HTTPException(
             status_code=400,
@@ -49,7 +55,8 @@ async def start_journey(journey: StartJourney, db: Session = Depends(get_db)) ->
 async def add_journey_event(                     
     journey_id: UUID,
     event: AddJourneyEvent,
-    db: Session = Depends(get_db)) -> dict:
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)) -> dict:
 
     now = datetime.now(timezone.utc)
     last_request_time[journey_id] = now

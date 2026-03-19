@@ -8,7 +8,7 @@ from app.routers.Route import router as routes_endpoint
 from app.routers.status import router as status_endpoint
 from app.routers.Auth import router as auth_endpoint
 from app.routers.Broadcast import router as broadcast_endpoint
-
+from app.routers.push import router as push_router
 from app.Services.journeyService.eventHandler import set_main_loop
 
 app = FastAPI(
@@ -31,6 +31,7 @@ app.include_router(routes_endpoint)
 app.include_router(status_endpoint)
 app.include_router(auth_endpoint)
 app.include_router(broadcast_endpoint)
+app.include_router(push_router)
 
 @app.on_event("startup")
 async def startup():

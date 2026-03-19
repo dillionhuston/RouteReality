@@ -16,7 +16,7 @@ def save_user_details(db: Session, user_data: AddUser):
 
 def get_user_details(db: Session, email: str = None, username: str = None):
     query = db.query(User)
-    if not email:
+    if  email:
         query = query.filter(User.email == email)
     if username:
         query = query.filter(User.username == username)

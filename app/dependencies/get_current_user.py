@@ -1,74 +1,61 @@
-# app/dependencies/auth.py
-# (or you can put it in app/Services/Auth/security.py or a new dependencies file)
-
-from typing import Annotated
-
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
 from app.models.Database import get_db
 from app.models.User import User
 from app.Services.Auth import security
 
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl="/auth/login",          
-    scheme_name="Bearer",
-    description="JWT access token"
-)
+bearer_scheme = HTTPBearer()
 
 
 def get_current_user(
-    token: Annotated[str, Depends(oauth2_scheme)],
-    db: Session = Depends(get_db)) -> User:
-    """
-    Dependency that:
-    - Validates the JWT token
-    - Extracts user ID from 'sub'
-    - Fetches the user from the database
-    - Returns the User model instance (or raises 401)
-    """
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),) -> User:
 
+    """
+    Validate the Bearer token and return the authenticated User.
+    Raise 401 if the token is missing, expired, or invalid.
+    """
+    token = credentials.credentials
     payload = security.verify_web_token(token)
-    if payload is None:
-        raise credentials_exception
 
-    user_id: str | None = payload.get("sub")
-    if user_id is None:
-        raise credentials_exception
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is invalid or has expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user_id: str = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token payload is malformed",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     user = db.query(User).filter(User.id == user_id).first()
-   
-
     if user is None:
-        raise credentials_exception
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     return user
 
 
-# Optional: stricter version for routes that anonymous users should NOT access
-def get_current_active_user(
-    current_user: Annotated[User, Depends(get_current_user)]) -> User:
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
+    db: Session = Depends(get_db),) -> User | None:
     """
-    Used  when a endpoint requires a registered user.
+    Like get_current_user but returns None instead of raising for unauthenticated
+    requests.
     """
-    if current_user.is_anonymous:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This action requires a registered account (anonymous users not allowed)"
-        )
-    #TODO also check if user.is_active, email_verified, etc. in the future
-    return current_user
-
-
-def get_any_authenticated_user(
-    current_user: Annotated[User, Depends(get_current_user)]) -> User:
-    """
-    Use when anonymous users are allowed to perform the action.
-    """
-    return current_user
+    if credentials is None:
+        return None
+    try:
+        return get_current_user(credentials, db)
+    except HTTPException:
+        return None

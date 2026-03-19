@@ -5,6 +5,9 @@ from app.models.Database import get_db
 from app.models.PushSubscription import PushSubscription
 from pydantic import BaseModel
 
+from app.dependencies.get_current_user import get_current_user
+from app.models.User import User
+
 router = APIRouter(prefix="/push", tags=["Push Notifications"])
 
 class SubscriptionSchema(BaseModel):
@@ -13,7 +16,11 @@ class SubscriptionSchema(BaseModel):
     keys: dict  
 
 @router.post("/subscribe")
-def subscribe(sub: SubscriptionSchema, db: Session = Depends(get_db)):
+def subscribe(
+    sub: SubscriptionSchema,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)):
+
     sub_id = hashlib.sha256(sub.endpoint.encode()).hexdigest()
     existing = db.get(PushSubscription, sub_id)
     if existing:
@@ -31,7 +38,10 @@ def subscribe(sub: SubscriptionSchema, db: Session = Depends(get_db)):
     return {"status": "subscribed"}
 
 @router.post("/unsubscribe")
-def unsubscribe(endpoint: str, db: Session = Depends(get_db)):
+def unsubscribe(
+    endpoint: str, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)):
     sub_id = hashlib.sha256(endpoint.encode()).hexdigest()
     sub = db.get(PushSubscription, sub_id)
     if sub:
