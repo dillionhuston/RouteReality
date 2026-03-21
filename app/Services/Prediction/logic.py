@@ -8,6 +8,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from app.Services.Prediction.data import get_user_journeys, get_recent_user_events
+from app.utils.fetch_time import fetch_scheduled_time
 
 
 def weighted_average(times: List[datetime]) -> Optional[datetime]:
@@ -41,7 +42,7 @@ def adjust_timetable_time(
     if sched >= ref:
         return sched, 0.55  # still in future, ok confidence
 
-    # already gone → drift forward a bit
+    # already gone  drift forward a bit
     late_min = (ref - sched).total_seconds() / 60
     drift = min(late_min, max_drift_min)
     adjusted = sched + timedelta(minutes=drift + 2) # keeps the drift relative to the scheduled time, not the current time
@@ -71,7 +72,7 @@ def predict_bus_time(
         past_arrivals = []
 
     # default fallback - something ahead
-    pred_time = now + timedelta(minutes=12)
+    pred_time = now + timedelta(minutes=6)
     confidence = 0.25
 
     # 1. Recent ARRIVED reports
@@ -151,6 +152,7 @@ def get_bus_prediction(
     if db is None:
         raise ValueError("Need db session")
 
+    static = fetch_scheduled_time(route_id, stop_id)
     now = datetime.now(timezone.utc)
 
     past_times = get_user_journeys(
