@@ -11,6 +11,8 @@ from app.routers.Broadcast import router as broadcast_endpoint
 from app.routers.push import router as push_router
 from app.routers.Stop import router as stop_router
 from app.routers.Time import router as time_router
+from app.routers.Leaderboard import router as leaderboard_router
+from app.routers.User import router as user_roouter
 from app.Services.journeyService.eventHandler import set_main_loop
 
 app = FastAPI(
@@ -36,6 +38,9 @@ app.include_router(broadcast_endpoint)
 app.include_router(push_router)
 app.include_router(stop_router)
 app.include_router(time_router)
+app.include_router(leaderboard_router)
+app.include_router(user_roouter)
+
 @app.on_event("startup")
 async def startup():
     app.state.loop = asyncio.get_event_loop()

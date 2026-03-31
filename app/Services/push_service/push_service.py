@@ -1,25 +1,29 @@
-import os
 import json
+import os
 import logging
-from dotenv import load_dotenv
-from pywebpush import webpush, WebPushException
 from sqlalchemy.orm import Session
-from app.models.PushSubscription import PushSubscription
+from pywebpush import webpush, WebPushException
 
-load_dotenv()
+from app.models.PushSubscription import PushSubscription
 
 logger = logging.getLogger(__name__)
 
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_EMAIL = os.getenv("VAPID_EMAIL")
 
 if not VAPID_PRIVATE_KEY or not VAPID_EMAIL:
-    raise ValueError("VAPID_PRIVATE_KEY and VAPID_EMAIL must be set in .env")
+    logger.error("VAPID_PRIVATE_KEY and VAPID_EMAIL must be set in .env")
 
 VAPID_CLAIMS = {"sub": f"mailto:{VAPID_EMAIL}"}
 
-def send_push_notification(subscription: PushSubscription, title: str, body: str, url: str = "/") -> bool:
-    """Send notfiction to user"""
+
+def send_push_notification(
+    subscription: PushSubscription,
+    title: str,
+    body: str,
+    url: str = "/") -> bool:
+    """Send push to a single subscription. Returns True on success."""
     try:
         webpush(
             subscription_info={
@@ -30,34 +34,66 @@ def send_push_notification(subscription: PushSubscription, title: str, body: str
                 "title": title,
                 "body": body,
                 "url": url,
-                "route_id": subscription.service_id,
             }),
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims=VAPID_CLAIMS,
+            ttl=86400,  # 24 hours
         )
+        logger.debug(f"Push sent successfully to subscription {subscription.id[:8]}...")
         return True
+
     except WebPushException as ex:
-        if ex.response and ex.response.status_code in [410, 404]:
-            logger.info(f"Removing expired subscription {subscription.id}")
-            return False  # signal to delete
-        logger.warning(f"Push failed for {subscription.id}: {ex}")
-        return False
+        if ex.response and ex.response.status_code in (404, 410):
+            logger.info(f"Subscription {subscription.id[:8]}... expired (HTTP {ex.response.status_code})")
+            return False
+        else:
+            logger.warning(f"WebPushException for {subscription.id[:8]}...: {ex}")
+            return False
+
     except Exception as e:
-        logger.exception(f"Unexpected push error: {e}")
+        logger.exception(f"Unexpected error sending push to {subscription.id[:8]}...")
         return False
 
-def send_notifications_to_service(db: Session, service_id: str, title: str, body: str, url: str = "/") -> int:
-    subs = db.query(PushSubscription).filter(PushSubscription.service_id == service_id).all()
+
+def send_notifications_to_service(
+    db: Session,
+    service_id: str,
+    title: str,
+    body: str,
+    url: str = "/") -> int:
+    """
+    Send push notification to all subscribers of a service_id.
+    Automatically removes dead subscriptions.
+    Returns number of successful deliveries.
+    """
+    if not VAPID_PRIVATE_KEY:
+        logger.warning("VAPID keys not configured — skipping push notifications")
+        return 0
+
+    subs = db.query(PushSubscription).filter(
+        PushSubscription.service_id == service_id
+    ).all()
+
+    if not subs:
+        logger.debug(f"No subscribers for service {service_id}")
+        return 0
+
     dead = []
     sent = 0
+
     for sub in subs:
-        ok = send_push_notification(sub, title, body, url)
-        if ok:
+        success = send_push_notification(sub, title, body, url)
+        if success:
             sent += 1
         else:
             dead.append(sub)
-    for sub in dead:
-        db.delete(sub)
+
+    # Clean up dead subscriptions
     if dead:
+        for sub in dead:
+            db.delete(sub)
         db.commit()
+        logger.info(f"Cleaned up {len(dead)} expired subscriptions for service {service_id}")
+
+    logger.info(f"Push notifications for service {service_id}: {sent}/{len(subs)} sent")
     return sent

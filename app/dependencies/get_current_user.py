@@ -8,10 +8,10 @@ from app.Services.Auth import security
 
 bearer_scheme = HTTPBearer()
 
-
+@staticmethod
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db),) -> User:
+    db: Session = Depends(get_db)) -> User:
 
     """
     Validate the Bearer token and return the authenticated User.
@@ -48,7 +48,7 @@ def get_current_user(
 
 def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
-    db: Session = Depends(get_db),) -> User | None:
+    db: Session = Depends(get_db)) -> User | None:
     """
     Like get_current_user but returns None instead of raising for unauthenticated
     requests.

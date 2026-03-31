@@ -1,0 +1,56 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from datetime import datetime
+
+from app.models.Database import get_db
+from app.models.User import User
+from app.models.UserStats import UserStats
+from app.dependencies.get_current_user import get_current_user   
+from app.schemas.user import UserProfileResponse, UserStatsResponse
+
+router = APIRouter(prefix="/users", tags=["Users"])
+
+
+@router.get("/me", response_model=UserProfileResponse)
+def get_my_profile(
+    current_user: User = Depends(get_current_user),     
+    db: Session = Depends(get_db)
+):
+    """Get current user's profile information."""
+    return UserProfileResponse(
+        id=current_user.id,
+        username=current_user.username,
+        email=current_user.email,
+        created_at=current_user.created_at if hasattr(current_user, 'created_at') else datetime.now(),
+        is_guest=getattr(current_user, 'is_anonymous', False)
+    )
+
+
+@router.get("/me/stats", response_model=UserStatsResponse)
+def get_my_stats(
+    current_user: User = Depends(get_current_user),   
+    db: Session = Depends(get_db)
+):
+    """Get current user's stats including points, streaks, and badges."""
+    stats = db.query(UserStats).filter(UserStats.user_id == current_user.id).first()
+    
+    if not stats:
+        stats = UserStats(user_id=current_user.id)
+        db.add(stats)
+        db.commit()
+        db.refresh(stats)
+
+    accuracy = (stats.accurate_reports / stats.total_reports * 100) if stats.total_reports > 0 else 0
+    
+    badges = stats.earned_badges.split(',') if stats.earned_badges else []
+
+    return UserStatsResponse(
+        points=stats.points,
+        streak_current=stats.streak_current,
+        streak_best=stats.streak_best,
+        total_reports=stats.total_reports,
+        accurate_reports=stats.accurate_reports,
+        accuracy_percentage=round(accuracy, 1),
+        last_report_date=stats.last_report_date,
+        badges=badges
+    )

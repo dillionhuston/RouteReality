@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID   
 
 from app.models.Database import Base
+from typing import Optional
 import uuid
 
 class Route(Base):
@@ -38,3 +39,5 @@ class RouteStop(Base):
 
     route = relationship('Route', back_populates='route_stops')
     stop  = relationship('Stop', back_populates='route_stops')
+
+

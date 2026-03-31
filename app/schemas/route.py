@@ -23,3 +23,9 @@ class StopsPerRoute(BaseModel):
 
     class Config:
         from_attributes = True  
+
+
+class RouteAtStop(BaseModel):
+    route_id: str
+    route_number: str
+    direction: Optional[int] = None 

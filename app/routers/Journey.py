@@ -9,7 +9,7 @@ from app.Services.journeyService.eventHandler import JourneyEventHandler
 from app.utils.logger.logger import get_logger
 from app.Services.push_service.push_service import send_notifications_to_service
 from app.routers.Broadcast import broadcast_service_update  
-from app.dependencies.get_current_user import get_current_user
+from app.dependencies.get_current_user import get_current_user, get_current_user_optional
 from app.models.User import User 
 
 logger = get_logger(__name__)
@@ -25,7 +25,7 @@ router = APIRouter(prefix="/journeys", tags=["Journey"])
 async def start_journey(
     journey: StartJourney,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)) -> dict:
+    current_user: User = Depends(get_current_user_optional)) -> dict:
 
     if not journey.start_stop_id or not journey.end_stop_id:
         raise HTTPException(
@@ -56,15 +56,17 @@ async def add_journey_event(
     journey_id: UUID,
     event: AddJourneyEvent,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)) -> dict:
-
+    current_user: User = Depends(get_current_user_optional)) -> dict:  
+    
+    """Allow user to report event using their journey id and current user"""
     now = datetime.now(timezone.utc)
     last_request_time[journey_id] = now
 
     updated = JourneyEventHandler.add_event(
         event_type=event.event.value,
         db=db,
-        journey_id=journey_id
+        journey_id=journey_id,
+        user_id=current_user.id if current_user and not current_user.is_anonymous else None
     )
 
     if not updated:

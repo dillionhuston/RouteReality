@@ -7,6 +7,7 @@ class PushSubscription(Base):
 
     id = Column(String, primary_key=True, index=True)  
     service_id = Column(String, nullable=False, index=True)  
+    user_id = Column(String, nullable=True)   
     endpoint = Column(String, unique=True, nullable=False)
     keys = Column(JSON, nullable=False)  
     created_at = Column(DateTime(timezone=True), server_default=func.now())

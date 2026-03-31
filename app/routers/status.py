@@ -5,15 +5,14 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from app.models.Journey import Journey
-from app.models.Route import Route, RouteStop
+from app.models.Route import Route, RouteStop, Stop
 from app.models.Database import get_db
 from app.utils.logger import logger
 
-
-
 router = APIRouter(prefix="/journeys", tags=["Journeys"])
 
-ACTIVE_STATUSES = ["on_route", "delayed", "departed", "in_progress", "en_route"]
+
+ACTIVE_STATUSES = ["on_route", "delayed", "departed", "in_progress", "en_route"] #todo make schema for this
 
 
 def minutes_left(pred: Optional[str]) -> Optional[int]:
@@ -24,11 +23,50 @@ def minutes_left(pred: Optional[str]) -> Optional[int]:
         dt = datetime.fromisoformat(pred.replace("Z", "+00:00"))
         delta = dt - datetime.now(timezone.utc)
         mins = int(delta.total_seconds() // 60)
-        # Only show future arrivals or up to 1 hour in the past
         return max(mins, 0) if mins > -60 else None
     except Exception:
         return None
 
+@router.get("/status/journey/{journey_id}")
+def journey_status(
+    journey_id: str,
+    db: Session = Depends(get_db)):
+
+    """Get status for a specific journey by its ID."""
+    journey = db.query(Journey).filter(Journey.id == journey_id).first()
+    
+    if not journey:
+        raise HTTPException(404, f"Journey {journey_id} not found")
+    
+    route = db.query(Route).filter(Route.id == journey.route_id).first()
+    
+    # Get destination stop
+    destination = None
+    if journey.end_stop_id:
+        dest_stop = db.query(Stop).filter(Stop.id == journey.end_stop_id).first()
+        if dest_stop:
+            destination = dest_stop.name
+    
+    # Calculate minutes remaining from predicted arrival
+    minutes_remaining = None
+    if journey.predicted_arrival:
+        delta = journey.predicted_arrival - datetime.now(timezone.utc)
+        minutes_remaining = max(0, int(delta.total_seconds() / 60))
+    
+    return {
+        "journey_id": journey.id,
+        "service_id": journey.service_id,
+        "route_id": journey.route_id,
+        "route_number": route.name if route else journey.route_id,
+        "destination": destination,
+        "status": journey.status,
+        "predicted_arrival": journey.predicted_arrival.isoformat() if journey.predicted_arrival else None,
+        "minutes_remaining": minutes_remaining,
+        "start_stop_id": journey.start_stop_id,
+        "end_stop_id": journey.end_stop_id,
+        "created_at": journey.created_at.isoformat(),
+        "confidence": journey.confidence
+    }
 
 @router.get("/status/stop/{stop_id}")
 def journeys_for_stop(
@@ -84,11 +122,10 @@ def journeys_for_stop(
                 "predicted_arrival": j.predicted_arrival,
                 "minutes_remaining": minutes_left(j.predicted_arrival)
             }
-            for j in journeys
+            for j in journeys 
         ]
     }
         
-
 
 @router.get("/status/{route_id}")
 def single_route(
@@ -123,8 +160,6 @@ def single_route(
         .all()
     )
 
-    
-
     return {
         "route_id": route_id,
         "route_name": route.name or route_id,
@@ -139,9 +174,49 @@ def single_route(
                 "status": j.status,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
                 "minutes_remaining": minutes_left(j.predicted_arrival)
-
-                
             }
             for j in recent_journeys
         ]
     }
+
+
+@router.get("/active")
+def get_active_journeys(
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=50)):
+    """
+    Get all currently active journeys (in progress, delayed, arrived)"""
+    #todo, change to schema also
+    active_statuses = ["STARTED", "ON_BUS", "ARRIVED", "DELAYED", "en_route", "on_route"]
+    
+    journeys = (
+        db.query(Journey)
+        .filter(Journey.status.in_(active_statuses))
+        .filter(Journey.ended_at.is_(None))
+        .order_by(desc(Journey.created_at))
+        .limit(limit)
+        .all()
+    )
+    
+    result = []
+    for j in journeys:
+        route = db.query(Route).filter(Route.id == j.route_id).first()
+        start_stop = db.query(Stop).filter(Stop.id == j.start_stop_id).first()
+        
+        # Calculate minutes remaining
+        minutes_remaining = None
+        if j.predicted_arrival:
+            if isinstance(j.predicted_arrival, datetime):
+                delta = j.predicted_arrival - datetime.now(timezone.utc)
+                minutes_remaining = max(0, int(delta.total_seconds() / 60))
+        
+        result.append({
+            "journey_id": j.id,
+            "route_number": route.name if route else j.route_id,
+            "status": j.status,
+            "start_stop": start_stop.name if start_stop else "Unknown",
+            "minutes_remaining": minutes_remaining,
+            "created_at": j.created_at.isoformat()
+        })
+    
+    return result

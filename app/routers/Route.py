@@ -7,7 +7,7 @@ from app.models.Route import Route, RouteStop
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.utils.logger import logger
 
-from app.dependencies.get_current_user import get_current_user
+from app.dependencies.get_current_user import get_current_user, get_current_user_optional
 from app.models.User import User
 
 router = APIRouter(prefix="/route", tags=["Routes"])
@@ -17,10 +17,11 @@ logger = logger.get_logger()
 @router.get("/routes",response_model=List[RouteOut])
 def get_routes(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)):
+    current_user: User = Depends(get_current_user_optional)):
     """
-    Return all routes with first stop lat/lon for dropdowns or maps.
+    Returns all routes with first stop lat/lon for dropdowns or maps
     """
+
     routes = db.query(Route).options(
         joinedload(Route.route_stops).joinedload(RouteStop.stop)
     ).order_by(Route.name).all()
@@ -33,7 +34,6 @@ def get_routes(
     for r in routes:
         lat = lon = None
         if r.route_stops:
-            # grab first stop in order
             first = min(r.route_stops, key=lambda rs: rs.sequence)
             if first.stop:
                 lat = first.stop.latitude
@@ -48,16 +48,16 @@ def get_routes(
 
     return result
 
-
 @router.get("/{route_id}/stops", response_model=List[StopsPerRoute])
 def get_stops_per_route(
     route_id: str, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)):
-    """
-    Get all stops for a route, ordered by sequence.
-    Skips stops without proper name or missing stop object.
-    """
+    current_user: User = Depends(get_current_user_optional)):
+
+    """Get all stops for a route, ordered by sequence.
+       Skips stops without proper name or missing stop object
+     """
+    
     stops = db.query(RouteStop).options(
         joinedload(RouteStop.stop)
     ).filter(RouteStop.route_id == route_id).order_by(RouteStop.sequence).all()
