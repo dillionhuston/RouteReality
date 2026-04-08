@@ -1,257 +1,175 @@
-# Belfast Journey Event based Bus Tracking System
-[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.95+-brightgreen)](https://fastapi.tiangolo.com/)
-[![PostgreSQL](https://img.shields.io/badge/postgresql-15+-blue)](https://www.postgresql.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Live Demo](https://img.shields.io/badge/live-routereality.co.uk-blue)](https://routereality.co.uk)
-[![Stars](https://img.shields.io/github/stars/dillionhuston/RouteReality?style=social)](https://github.com/dillionhuston/RouteReality)
+# RouteReality: Real-Time Journey Tracking Engine
 
-**Live at:** [https://routereality.co.uk](https://routereality.co.uk)  
-Community-powered real-time bus predictions for Belfast & Northern Ireland.
+**Live demo:** [https://routereality.co.uk](https://routereality.co.uk) – Community-powered bus predictions for Belfast & Northern Ireland.
 
-## Screenshots
+RouteReality is an open-source prediction engine that turns static timetables and real-world user events into accurate arrival estimates with confidence scores. It was built for public transit but can be adapted to any scheduled journey system: buses, trains, trams, ferries, campus shuttles, delivery fleets, or event transport.
 
-<p align="center">
-  <img src="images/start_journey_map.png" alt="Home screen – start journey map" width="80%">
-  <br><br>
-  <img src="images/event_starts.png" alt="Route view with event reporting" width="80%">
-  <br><br>
-  <img src="images/started.png" alt="Active journey screen" width="80%">
-</p>
-
-RouteReality is a live bus tracking and prediction service for Belfast. It combines **static timetable data** with **real user-reported events** to deliver more reliable arrival estimates, confidence scoring, and event-based predictions.
+This repository shows the exact system running in Belfast – you can fork it and adapt it to your own city or use case.
 
 ## What It Does
-RouteReality combines multiple data sources to estimate bus arrival times:
 
-- **User-reported events** (recent arrivals or delays)
-- **Historical journey data**
-- **Static timetable data** (fallback)
+The engine combines:
 
-Recent user journeys are weighted more heavily than older data.  
-If no recent reports exist, the system falls back to static timetable times.
+- User-reported events (arrivals, delays, stops reached)
+- Historical journey data
+- Static timetable data (fallback)
+
+Recent reports are weighted more heavily. If no recent data exists, the system falls back to the static timetable.
 
 Each prediction includes a **confidence score** based on:
+
 - Number of recent events
 - Recency of events
 - Whether static data was used
 
+## Key Features (V2)
 
-## Current Version - V1.3 Update (Stability & Cleanup Release)
+- **Improved prediction algorithm** – time-sensitive weighted average that handles traffic, weather, and time-of-day patterns.
+- **Stop-based arrivals** – see all upcoming buses at any stop.
+- **User stats and leaderboard** – track contributions and community rankings.
+- **JWT authentication** – secure protected routes while keeping basic read access open.
+- **Web push notifications** (VAPID) – users can receive real-time updates.
+- **WebSocket broadcasting** – live journey status changes.
+- **Event-driven architecture** – every user report improves predictions for everyone.
 
-Version 1.3 focuses on stability and internal cleanup in preparation for the upcoming v2 release.
+## Use Cases Beyond Belfast
 
-- Fixed bugs across all services and API routes
-- Improved error handling and API responses
-- Corrected incorrect or missing type annotations
-- Hardened validation for journey events and prediction logic
-- Reduced edge-case failures caused by stale or conflicting data
-- Improved internal service boundaries for easier maintenance
+| Use case                      | What to change                        | Example                               |
+|-------------------------------|---------------------------------------|---------------------------------------|
+| Another city’s buses/trams    | Swap timetable importer               | Dublin, Glasgow, Manchester            |
+| Trains or ferries             | Support longer routes and dwell times | NI Railways or local ferries           |
+| University campus shuttles    | Smaller stop set + internal auth      | Any campus shuttle system              |
+| Delivery / logistics fleet    | Change terminology and ETA target     | Local courier or food delivery         |
+| Event shuttles                | Temporary routes and short-lived data | Festivals, sports events               |
+| Sensor + user hybrid          | Add IoT/GPS pings as event source     | Fleet with onboard GPS                 |
 
+Only the data importer and frontend labels usually need changing.
 
-## Prediction Engine Improvements in v1.3
-- Better handling of fresh departure and arrival events
-- Prevented negative ETAs after live overrides
-- More reliable fallback to static timetable data
-- Improved confidence scoring accuracy under low-data conditions
-
-## What's Coming in V2
-Development has started on **RouteReality V2**, which will introduce:
-- User accounts and authenticated journey submissions
-- Stronger database robustness and cleanup strategies
-- Improved scalability for higher traffic and more routes
-- Richer historical data modelling for better predictions
-- Foundation for real-time updates and analytics
-
-V1.3 focuses on making the current system stable, predictable, and ready for more features.
-
-
-### Known Limitations
-- Some routes or stops may overlap/conflict on external map providers (e.g. Google Maps)
-- Predictions are less confident in areas with fewer user reports
-- Coverage and accuracy improve as more users submit data
 
 ## Quick Start
 
 ### Prerequisites
+
 - Python 3.9+
-- PostgreSQL
-- pip or poetry for dependency management
+- PostgreSQL 15+
+- (Optional) Redis for WebSocket scaling
 
 ### Installation
 
 ```bash
-# Clone the repo
 git clone https://github.com/dillionhuston/RouteReality.git
 cd RouteReality
 
-# Create & activate virtual environment
 python -m venv venv
 source venv/bin/activate    # On Windows: venv\Scripts\activate
 
-# Install dependencies
 pip install -r requirements.txt
 
-# Copy example env file and edit it
 cp .env.example .env
-# → edit .env and set your DATABASE_URL
+# Edit .env – set DATABASE_URL, JWT_SECRET_KEY, VAPID keys, etc.
+```
 
-### Database Setup
+### Generate VAPID keys (for push notifications)
 
 ```bash
-# Create database
-createdb journey_tracking
+python gen_vapid.py
+# Copy the generated keys into your .env file
+```
 
-# Run migrations (if using Alembic)
+### Database setup
+
+```bash
+createdb journey_tracking
 alembic upgrade head
 ```
 
-### Running the Server
+### Run the server
 
 ```bash
 uvicorn app.main:app --reload
 ```
-API will be available at `http://localhost:8000`
+
+API is available at `http://localhost:8000`  
 Interactive docs at `http://localhost:8000/docs`
 
+## API Usage (V2)
 
-## API Usage
-### Get Available Routes
-```bash
-GET /route/routes
-```
-Returns list of all available routes with IDs and names.
+### Public endpoints
 
-### Get Stops for a Route
-```bash
-GET /route/routes/{route_id}/stops
-```
-Returns ordered list of stops for the specified route.
+- `GET /route/routes` – list all routes
+- `GET /route/routes/{route_id}/stops` – stops for a route
+- `GET /arrivals/stop/{stop_id}` – all upcoming buses at a stop (V2)
 
-### Start a Journey
+### Authenticated endpoints (JWT required)
+
+- `POST /journeys/start`
+- `POST /journeys/{journey_id}/event`
+- `GET /users/stats` – your contribution stats
+- `GET /users/leaderboard` – community leaderboard
+
+### Example: start a journey
+
 ```bash
 POST /journeys/start
-Content-Type: application/json
-
 {
   "route_id": "16",
   "start_stop_id": "490000001",
   "end_stop_id": "490000050",
-  "planned_start_time": "2026-01-24T09:00:00Z"  // optional
+  "planned_start_time": "2026-04-08T09:00:00Z"
 }
 ```
-Returns journey ID and initial predictions.
 
-### Submit Journey Event
+### Example: submit an event
+
 ```bash
 POST /journeys/{journey_id}/event
-Content-Type: application/json
-
 {
-  "event": "ARRIVED"  // or "DELAYED", "STOP_REACHED"
+  "event": "ARRIVED"   // or "DELAYED", "STOP_REACHED"
 }
 ```
-Updates journey status and returns updated predictions.
 
-## Technical Decisions
+WebSocket and Web Push endpoints are also available for real-time updates.
 
-### Why SQLAlchemy?
-Provides database abstraction and works well with FastAPI's dependency injection.
+## Prediction Engine Details
 
-### Why String IDs?
-Routes and stops use public identifiers (route numbers, ATCO codes) that users recognize. Internal journey IDs use UUIDs.
+The engine uses a **time-sensitive weighted average** because bus delays are not random. Traffic, weather, school runs, and public events create patterns.
 
-### Why Weighted Average over Median?
-We are modelling time drift, and not all data is trustworthy, Bus delays are not random outliners, there can be:
-- Traffic builds
-- Weather changes
-- School runs
-- Public events
+- Most recent report (e.g. 2 minutes ago) gets the highest weight.
+- Completed journeys from the last 30–60 minutes get medium weight.
+- Static timetable is the final fallback.
 
-So when we get:
-- When was the most recent time someone reported an event? (reported 2 mins ago)
-- When was the most recent completed journey?(30 mins ago)
-- When is the scheduled time on timetable?(a week ago or 1 month)
-
-It allows us to say:
-- Recent user report is very important
-- - Older journeys are somewhat important
-  - - Static timetable is our last report
-   
-Using the weighted average allows us to get the most recent, time sensitive real-world data, making it more reliable than older or static data.
-
-### Data Source Tracking
-Journeys track whether they come from official timetables or user submissions, allowing the prediction engine to trust user data more as it accumulates.
-
-## Project Structure
-```
-app/
-├── models/              # SQLAlchemy models
-│   ├── Database.py      # Database connection setup
-│   ├── Journey.py       # Journey model
-│   └── Route.py         # Route, Stop, RouteStop models
-├── schemas/             # Pydantic schemas for validation
-│   ├── journey.py       # Journey request/response schemas
-│   ├── route.py         # Route schemas
-│   └── stop.py          # Stop schemas
-├── Services/
-│   ├── journeyService/  # Journey business logic
-│   │   ├── journey_service.py
-│   │   └── eventHandler.py
-│   └── Prediction/      # Prediction engine
-│       └── prediction.py
-└── routes/              # API route handlers
-    ├── Journey.py
-    ├── Route.py
-    └── test.py
-```
+This approach has proven more reliable than a simple median or pure machine learning for real-world transit with variable data density.
 
 ## Journey State Machine
 
 ```
 STARTED → DELAYED → ARRIVED → STOP_REACHED
-   ↓         ↓         ↓
-   └─────────┴─────────┘
 ```
 
-- **STARTED**: Journey created, waiting for bus
-- **DELAYED**: User reports delay
-- **ARRIVED**: Bus has arrived, journey active
-- **STOP_REACHED**: Journey completed at destination
+- **STARTED** – journey created, waiting for bus
+- **DELAYED** – user reports a delay
+- **ARRIVED** – bus has arrived at the start stop
+- **STOP_REACHED** – journey completed at destination
 
-## Contributing
+## Project Structure
 
-We welcome contributions! Here's how you can help:
-
-### Areas for Improvement
-
-1. **Prediction Engine**: Improve algorithms, add time-of-day patterns, weather integration
-2. **Real-time Updates**: WebSocket support for live journey updates
-3. **Data Validation**: Better validation for journey data quality
-4. **Analytics**: Dashboard for route performance metrics
-5. **Testing**: Expand test coverage (currently minimal)
-6. **Documentation**: API examples, architecture diagrams
-
-### Getting Started
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Make your changes
-4. Write or update tests
-5. Submit a pull request
-
-### Code Style
-
-- Follow PEP 8 for Python code
-- Use type hints where possible
-- Add docstrings to public methods
-- Keep functions focused and single-purpose
-
-### Running Tests
-
-```bash
-pytest tests/
 ```
+app/
+├── models/              # SQLAlchemy models (Journey, Route, Stop, User, etc.)
+├── schemas/             # Pydantic schemas for validation
+├── Services/
+│   ├── journeyService/  # Journey business logic and event handling
+│   ├── Prediction/      # Prediction engine (improved in V2)
+│   └── notification/    # Web push and WebSocket broadcasting (V2)
+└── routes/              # API routers (auth, stats, arrivals, etc.)
+```
+
+## Technical Decisions
+
+- **SQLAlchemy** – clean database abstraction with FastAPI dependency injection.
+- **String IDs** – uses real public identifiers (route numbers, ATCO codes) for easy recognition and GTFS compatibility.
+- **Weighted average** – best for modelling real-time drift and non-random delays.
+- **Data source tracking** – distinguishes timetable vs user data so trust increases with more community reports.
 
 ## Configuration
 
@@ -259,21 +177,58 @@ Key environment variables in `.env`:
 
 ```
 DATABASE_URL=postgresql://user:password@localhost/journey_tracking
+JWT_SECRET_KEY=your_secret_key
+VAPID_PRIVATE_KEY=...
+VAPID_PUBLIC_KEY=...
+VAPID_SUBJECT=mailto:your@email.com
 ```
 
+## Known Limitations
 
-## Roadmap
+- Some routes or stops may have map overlaps on external providers (e.g. Google Maps).
+- Prediction confidence is lower in areas with few user reports.
+- Accuracy and coverage grow with community usage.
 
-- [ ] User authentication and personal journey history
-- [ ] Time-based prediction patterns (rush hour vs off-peak)
-- [ ] Mobile app integration
-- [ ] Real-time journey sharing between users
-- [ ] Integration with official transit APIs
-- [ ] Data export and analytics dashboard
+## Contributing
+
+We welcome contributions – especially from developers who want to adapt RouteReality for their own city or niche.
+
+### Good areas to help
+
+- Improving the prediction engine (time-of-day patterns, weather, ML fallback)
+- Adding new timetable importers (GTFS, custom APIs)
+- Frontend work (React, Vue, PWA) for V2 features (stats, leaderboard, push notifications)
+- Expanding test coverage
+- Documentation and architecture diagrams
+- Multi-city support
+
+### Getting started
+
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/your-feature`).
+3. Make your changes.
+4. Add or update tests where possible.
+5. Submit a pull request.
+
+Follow PEP 8, use type hints, and keep functions focused.
+
+### Running tests
+
+```bash
+pytest tests/
+```
+
+## Roadmap (post-V2)
+
+- Pluggable data importers for easier city adaptation
+- Multi-agency / multi-city support in one instance
+- Richer analytics dashboard
+- Deeper mobile / PWA integration
+- Official transit API integrations where available
 
 ## License
 
-MIT License
+MIT License  
 Copyright (c) 2026 Dillon Huston
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -282,4 +237,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-Built with FastAPI, SQLAlchemy, and PostgreSQL. Contributions welcome!
+---
+
+Built with FastAPI, SQLAlchemy, and PostgreSQL. Contributions welcome.  
+Let’s make better real-time journey tracking available everywhere.

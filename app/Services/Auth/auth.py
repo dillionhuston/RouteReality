@@ -10,28 +10,38 @@ class AuthService:
 
     @staticmethod
     def register_new_user(db: Session, user: CreateUser):
+
+        # Check if user already exists
         existing_user = db.query(User).filter(
             (User.email == user.email) | (User.username == user.username)
         ).first()
-
         if existing_user:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, 
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username or email already registered."
             )
 
+        # Validate password length in bytes (bcrypt limit)
+        password_bytes = user.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail="Password too long (max 72 bytes)."
+            )
+
+        # Hash the password
         hashed_password = security.create_password_hash(password=user.password)
 
+        # Prepare user object for saving
         user_to_save = AddUser(
-            id=str(uuid.uuid4),
+            id=str(uuid.uuid4()),   
             email=user.email,
-            username=user.username,     
+            username=user.username,
             hashed_password=hashed_password
         )
 
         saved_user = data.save_user_details(db, user_to_save)
-        return{"user_id": saved_user}
-         
+        return {"user_id": saved_user}
 
     @staticmethod
     def auth_user(db: Session, user_login: UserLogin):
@@ -59,17 +69,16 @@ class AuthService:
 
         token = security.generate_web_token({"sub": db_user.id})
         return {"access_token": token, "token_type": "bearer"}
-    
 
     @staticmethod
-    def create_anonymous_user(db:Session):
+    def create_anonymous_user(db: Session):
         random_user = str(uuid.uuid4())
         fake_password = str(uuid.uuid4())
 
         anonymous_user = User(
             id=str(uuid.uuid4()),
             email=None,
-            username = random_user,
+            username=random_user,
             hashed_password=security.create_password_hash(fake_password)
         )
 

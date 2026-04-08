@@ -21,6 +21,7 @@ class UserLogin(BaseModel):
 
 
 class AddUser(BaseModel):
+    id: str
     username: str
     email: str
     hashed_password: str

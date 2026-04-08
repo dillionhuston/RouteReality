@@ -7,4 +7,4 @@ passlib[bcrypt]
 PyJWT
 python-dotenv
 requests
-bcrypt
+bcrypt==4.3.0
