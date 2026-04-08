@@ -8,3 +8,7 @@ PyJWT
 python-dotenv
 requests
 bcrypt==4.3.0
+bcrypt
+psycopg3-binary
+pywebpush
+
