@@ -1,7 +1,7 @@
 # app/dependencies/services.py
 from fastapi import Depends
 from sqlalchemy.orm import Session
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.repositories.user_repository import UserRepository
 from app.Services.Auth.auth import AuthService
 

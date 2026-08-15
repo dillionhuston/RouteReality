@@ -6,7 +6,7 @@ from typing import Optional
 
 from app.models.Journey import Journey
 from app.models.Route import Route, RouteStop, Stop
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.utils.logger import logger
 
 router = APIRouter(prefix="/journeys", tags=["Journeys"])

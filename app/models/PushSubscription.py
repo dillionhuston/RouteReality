@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, JSON, DateTime, Index
 from sqlalchemy.sql import func
-from app.models.Database import Base
+from app.core.Database import Base
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"

@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Float, Integer, DateTime, func, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from uuid import uuid4
-from app.models.Database import Base
+from app.core.Database import Base
 
 class HistoricalDelay(Base):
     __tablename__ = "historical_delays"

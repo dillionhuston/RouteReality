@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session, joinedload
 
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.models.Route import Route, RouteStop
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.utils.logger import logger

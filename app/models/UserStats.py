@@ -1,6 +1,6 @@
 import uuid
 from sqlalchemy import Column, String, Integer, DateTime, Date, ForeignKey, func
-from app.models.Database import Base
+from app.core.Database import Base
 
 class UserStats(Base):
     __tablename__ = "user_stats"

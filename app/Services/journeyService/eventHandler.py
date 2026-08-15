@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.routers.Broadcast import broadcast_service_update
 from app.utils.logger.logger import get_logger
 from app.models.Journey import Journey
-from app.schemas.journey import JourneyEventType
+from app.schemas.constants import JourneyEventType
 from app.Services.Prediction.service import get_prediction
 from app.Services.push_service.push_service import send_notifications_to_service
 

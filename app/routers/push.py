@@ -4,7 +4,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.models.PushSubscription import PushSubscription
 from app.dependencies.get_current_user import get_current_user
 from app.models.User import User

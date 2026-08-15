@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy import Column, String, ForeignKey, Integer, DateTime, Float, func
-from app.models.Database import Base
+from app.core.Database import Base
 from uuid import uuid4, UUID
 
 

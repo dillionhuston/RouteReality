@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.dependencies.get_current_user import get_current_user_optional
 from app.models.Route import Route, RouteStop
 from app.models.StopArrivalAnchors import StopArrivalAnchors

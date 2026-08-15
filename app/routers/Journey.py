@@ -2,7 +2,7 @@ from uuid import UUID
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
-from app.models.Database import get_db
+from app.core.Database import get_db
 from app.schemas.journey import StartJourney, AddJourneyEvent
 from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
