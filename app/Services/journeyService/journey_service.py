@@ -37,7 +37,7 @@ class JourneyService:
         if planned.tzinfo is None:
             planned = planned.replace(tzinfo=timezone.utc)
 
-        official_start_str = planned.isoformat()
+        official_start_str = planned
 
         result = get_closest_scheduled_time_to_now(
             route_id=data.route_id,

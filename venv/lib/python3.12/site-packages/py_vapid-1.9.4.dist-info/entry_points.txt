@@ -1,0 +1,2 @@
+[console_scripts]
+vapid = py_vapid.main:main

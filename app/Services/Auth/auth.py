@@ -6,22 +6,24 @@ from app.Services.Auth import data, security
 from app.schemas.user import CreateUser, UserLogin, AddUser
 from app.models.User import User
 
+from app.repositories.user_repository import UserRepository
+
 class AuthService:
 
-    @staticmethod
-    def register_new_user(db: Session, user: CreateUser):
+    def __init__(self, UserRepo: UserRepository):
+        self.userrepo = UserRepo
+
+    async def register_new_user(self, user: CreateUser):
 
         # Check if user already exists
-        existing_user = db.query(User).filter(
-            (User.email == user.email) | (User.username == user.username)
-        ).first()
+        existing_user = await self.userrepo.GetUserByUsername(user.username)
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username or email already registered."
             )
 
-        # Validate password length in bytes (bcrypt limit)
+        # Validate password length in bytes
         password_bytes = user.password.encode('utf-8')
         if len(password_bytes) > 72:
             raise HTTPException(
@@ -40,7 +42,7 @@ class AuthService:
             hashed_password=hashed_password
         )
 
-        saved_user = data.save_user_details(db, user_to_save)
+        saved_user = await self.userrepo.AddUser(user_to_save)
         return {"user_id": saved_user}
 
     @staticmethod
