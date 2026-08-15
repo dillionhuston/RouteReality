@@ -1,6 +1,7 @@
-.env
-/initdb.py
-./initdb.py
+venv/
+
 __pycache__/
 *.py[cod]
 *$py.class
+
+initdb.py
