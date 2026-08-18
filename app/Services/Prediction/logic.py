@@ -1,14 +1,14 @@
-# services/prediction/logic.py
-# this is where we guess when the bus will show up
-# still rough but way better than just spitting timetable times
 
-from datetime import datetime, timezone, timedelta, time
+
+from datetime import datetime, timezone, timedelta, time, UTC
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
 
-from app.Services.Prediction.data import get_user_journeys, get_recent_user_events
 from app.utils.fetch_time import fetch_scheduled_time
+
+from app.repositories.event_repository import EventRepository
+from app.repositories.journey_repository import JourneyRepository
 
 
 def weighted_average(times: List[datetime]) -> Optional[datetime]:
@@ -155,17 +155,20 @@ def get_bus_prediction(
     static = fetch_scheduled_time(route_id, stop_id)
     now = datetime.now(timezone.utc)
 
-    past_times = get_user_journeys(
-        db=db,
+    past_times = JourneyRepository().GetRecentArrivedJourneys(
         route_id=route_id,
-        stop_id=stop_id
+        stop_id=stop_id,
+        limit=5,
+        now=datetime.now(tz=UTC)
         
     )
 
-    events = get_recent_user_events(
-        db=db,
+    events = EventRepository.GetRecentEventsByRouteAndStop(
         route_id=route_id,
         stop_id=stop_id,
+        limit=5,
+        cutoff_minutes=60
+
         
     )
 

@@ -1,30 +1,27 @@
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.Database import get_db
-from app.models.Route import Route, RouteStop
+from app.repositories.router_repository import RouteRepository
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.utils.logger import logger
-
-from app.dependencies.get_current_user import get_current_user, get_current_user_optional
+from app.dependencies.get_current_user import get_current_user_optional
 from app.models.User import User
+from app.dependencies.dependency import get_route_repository
 
 router = APIRouter(prefix="/route", tags=["Routes"])
 logger = logger.get_logger()
 
 
-@router.get("/routes",response_model=List[RouteOut])
-def get_routes(
-    db: Session = Depends(get_db),
+@router.get("/routes", response_model=List[RouteOut])
+async def get_routes(
+    repo: RouteRepository = Depends(get_route_repository),
     current_user: User = Depends(get_current_user_optional)):
     """
-    Returns all routes with first stop lat/lon for dropdowns or maps
+    Return all routes with first stop lat/lon for dropdowns or maps.
     """
-
-    routes = db.query(Route).options(
-        joinedload(Route.route_stops).joinedload(RouteStop.stop)
-    ).order_by(Route.name).all()
+    routes = await repo.GetRoutesWithStops()
 
     if not routes:
         logger.warning("No routes in database")
@@ -48,19 +45,15 @@ def get_routes(
 
     return result
 
+
 @router.get("/{route_id}/stops", response_model=List[StopsPerRoute])
-def get_stops_per_route(
-    route_id: str, 
-    db: Session = Depends(get_db),
+async def get_stops_per_route(
+    route_id: str,
+    repo: RouteRepository = Depends(get_route_repository),
     current_user: User = Depends(get_current_user_optional)):
 
-    """Get all stops for a route, ordered by sequence.
-       Skips stops without proper name or missing stop object
-     """
-    
-    stops = db.query(RouteStop).options(
-        joinedload(RouteStop.stop)
-    ).filter(RouteStop.route_id == route_id).order_by(RouteStop.sequence).all()
+    """Returns stops for a route"""
+    stops = await repo.GetStopsByRoute(route_id)
 
     if not stops:
         raise HTTPException(404, f"No stops for route '{route_id}'")

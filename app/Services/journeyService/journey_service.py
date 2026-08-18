@@ -1,76 +1,84 @@
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, UTC
 from uuid import uuid4
 from fastapi import HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.Route import Route, Stop
+from app.models.PredictionSnapshot import PredictionSnapshot
 from app.models.Journey import Journey
 from app.schemas.journey import StartJourney, JourneyEventType
 from app.utils.fetch_time import get_closest_scheduled_time_to_now
 from app.Services.v2.prediction.prediction_service import PredictionService
-from app.Services.v2.snapshot.snapshot import SnapshotService
 from app.utils.logger.logger import get_logger
 from app.routers.Broadcast import broadcast_service_update
 
-logger = get_logger()
+from app.repositories.router_repository import RouteRepository
+from app.repositories.journey_repository import JourneyRepository
+from app.repositories.snapshot_repository import SnapshotRepository
+
+logger = get_logger(__name__)
 
 class JourneyService:
-    """Service for creating and querying journeys."""
+    def __init__(
+        self,
+        route_repo: RouteRepository,
+        prediction_service: PredictionService,
+        journey_repo: JourneyRepository,
+        snapshot_repo: SnapshotRepository,
+    ):
+        self.route_repo = route_repo
+        self.pred_svc = prediction_service
+        self.journey_repo = journey_repo
+        self.snapshot_repo = snapshot_repo
 
-    @staticmethod
-    async def start_journey(data: StartJourney, db: Session) -> dict:
-        route = db.query(Route).filter(Route.id == data.route_id).first()
+    async def start_journey(self, data: StartJourney):
+
+        route = await self.route_repo.GetRouteID(data.route_id)
         if not route:
-            raise HTTPException(404, f"Route {data.route_id} not found")
+            raise ValueError(f"Route {data.route_id} not found")
 
-        start_stop = db.query(Stop).filter(Stop.id == data.start_stop_id).first()
+        start_stop = await self.route_repo.GetStartStopID(data.start_stop_id)
         if not start_stop:
-            raise HTTPException(404, f"Start stop {data.start_stop_id} not found")
+            raise ValueError(f"Start stop {data.start_stop_id} not found")
 
         end_stop = None
         if data.end_stop_id:
-            end_stop = db.query(Stop).filter(Stop.id == data.end_stop_id).first()
+            end_stop = await self.route_repo.GetEndStopID(data.end_stop_id)
             if not end_stop:
-                raise HTTPException(404, f"End stop {data.end_stop_id} not found")
+                raise ValueError(f"End stop {data.end_stop_id} not found")
 
         planned = data.planned_start_time or datetime.now(timezone.utc)
         if planned.tzinfo is None:
             planned = planned.replace(tzinfo=timezone.utc)
 
-        official_start_str = planned
-
+        # Get scheduled time
         result = get_closest_scheduled_time_to_now(
             route_id=data.route_id,
             stop_id=data.start_stop_id,
             reference_time=planned,
         )
-        scheduled_time = None
         if result:
             scheduled_time, _, _ = result
             if scheduled_time:
                 sched_dt = datetime.combine(planned.date(), scheduled_time, tzinfo=timezone.utc)
                 if sched_dt > planned:
                     planned = sched_dt
-                    official_start_str = planned.isoformat()
-        else:
-            logger.warning("No scheduled time found, using planned time")
 
-        pred_svc = PredictionService()
+        # Get prediction
         eta = None
         confidence = 0.3
         try:
-            eta, confidence = pred_svc.get_prediction(
-                db=db,
+            eta, confidence = await self.pred_svc.get_prediction(
                 route_id=data.route_id,
                 target_stop_id=data.start_stop_id,
-                planned_start_time=planned
+                planned_start_time=planned,
+                now=datetime.now(UTC)
             )
         except Exception as e:
             logger.error(f"Initial prediction failed: {e}")
 
-        # Fallback if prediction is None
         if eta is None:
-            default_duration = timedelta(minutes=20)   
+            default_duration = timedelta(minutes=20)
             eta = planned + default_duration
             confidence = 0.1
             logger.info(f"Using fallback ETA: {eta}")
@@ -85,33 +93,29 @@ class JourneyService:
             planned_start_time=planned,
             status="STARTED",
             created_at=datetime.now(timezone.utc),
-            official_start_time=official_start_str,
+            official_start_time=planned,
             predicted_arrival=eta,
             confidence=confidence
         )
-        db.add(journey)
-        db.commit()
-        db.refresh(journey)
+       
+        await self.journey_repo.AddJourney(journey)
 
-        # Snapshot
         try:
-            SnapshotService.create_snapshot(
-                db=db,
-                journey_id=journey.id,
+            snapshot = PredictionSnapshot(
+                id=str(uuid4()),
+                journey_id=journey_id,
                 service_id=journey.service_id,
                 stop_id=data.start_stop_id,
-                user_reported_arrival=None,
+                user_reported_arrival=datetime.now(timezone.utc),
                 static_scheduled=planned,
                 best_trusted_arrival=eta or planned,
-                predicted_arrival=eta,
+                predicted_arrival=journey.predicted_arrival,
                 confidence=confidence
             )
-            db.commit()
+            await self.snapshot_repo.CreateSnapshot(snapshot)
         except Exception as e:
             logger.error(f"Initial snapshot failed: {e}")
-            db.rollback()
 
-        
         try:
             minutes_remaining = int((eta - datetime.now(timezone.utc)).total_seconds() / 60) if eta else None
             await broadcast_service_update(
@@ -127,7 +131,6 @@ class JourneyService:
             logger.error(f"Broadcast failed on start: {e}")
 
         logger.info(f"Start success - journey_id: {journey_id}, status: STARTED")
-
         return {
             "journey_id": journey_id,
             "service_id": journey.service_id,
@@ -136,24 +139,3 @@ class JourneyService:
             "predicted_arrival": eta.isoformat() if eta else None,
             "confidence": confidence
         }
-
-    @staticmethod
-    def get_active_journey(journey_id: str, db: Session) -> Journey:
-        """Find a journey that's still going (no end time)."""
-        journey = db.query(Journey).filter(
-            Journey.id == journey_id,
-            Journey.ended_at.is_(None),
-            Journey.status.in_([
-                JourneyEventType.STARTED.value,
-                JourneyEventType.ARRIVED.value,
-                JourneyEventType.DELAYED.value,
-            ])
-        ).first()
-
-        if journey is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No active journey found for {journey_id}"
-            )
-
-        return journey

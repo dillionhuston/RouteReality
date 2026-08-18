@@ -1,13 +1,15 @@
 import json
 import os
 import logging
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from pywebpush import webpush, WebPushException
 
 from app.models.PushSubscription import PushSubscription
+from app.repositories.push_subscription_repository import PushSubscriptionRepository
 
 logger = logging.getLogger(__name__)
 
+#TODO move to config
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
 VAPID_EMAIL = os.getenv("VAPID_EMAIL")
@@ -55,8 +57,8 @@ def send_push_notification(
         return False
 
 
-def send_notifications_to_service(
-    db: Session,
+async def send_notifications_to_service(
+    db: AsyncSession,
     service_id: str,
     title: str,
     body: str,
@@ -70,9 +72,8 @@ def send_notifications_to_service(
         logger.warning("VAPID keys not configured — skipping push notifications")
         return 0
 
-    subs = db.query(PushSubscription).filter(
-        PushSubscription.service_id == service_id
-    ).all()
+    repo = PushSubscriptionRepository(db)
+    subs = await repo.GetSubscriptionsByService(service_id)
 
     if not subs:
         logger.debug(f"No subscribers for service {service_id}")
@@ -88,11 +89,8 @@ def send_notifications_to_service(
         else:
             dead.append(sub)
 
-    # Clean up dead subscriptions
     if dead:
-        for sub in dead:
-            db.delete(sub)
-        db.commit()
+        await repo.DeleteSubscriptions(dead)
         logger.info(f"Cleaned up {len(dead)} expired subscriptions for service {service_id}")
 
     logger.info(f"Push notifications for service {service_id}: {sent}/{len(subs)} sent")

@@ -1,94 +1,129 @@
-from typing import Optional, Tuple
-from datetime import datetime, time, timezone, timedelta
-from .data import get_recent_user_events, get_user_journeys
-from .logic import predict_bus_time
-from sqlalchemy.orm import Session
-from app.models.StopArrivalAnchors import StopArrivalAnchors
+from datetime import datetime, timezone, timedelta
+from typing import Optional, List, Dict
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.repositories.prediction_repository import PredictionRepository
+from app.repositories.event_repository import EventRepository
+from app.repositories.journey_repository import JourneyRepository
+from app.Services.Prediction.logic import predict_bus_time
 from app.utils.logger.logger import get_logger
 
-logger = get_logger(__name__)
 
-def _prediction_source(journey_times, events, static_dt, anchor_exists: bool) -> str:
-    if anchor_exists:
-        return "live_scraped"      
-    if events:
-        return "live"
-    if journey_times:
-        return "historical"
-    if static_dt:
-        return "timetable"
-    return "fallback"
+class PredictionService:
 
+    def __init__(
+        self,
+        prediction_repo: PredictionRepository,
+        event_repo: EventRepository,
+        journey_repo: JourneyRepository,
+    ):
+        self.prediction_repo = prediction_repo
+        self.event_repo = event_repo
+        self.journey_repo = journey_repo
+        self.logger = get_logger(__name__)
 
-def get_prediction(
-    route_id: str,
-    stop_id: str,
-    static_dt: Optional[datetime],
-    db: Session
-) -> dict:
-    
-    now = datetime.now(timezone.utc)
+    @staticmethod
+    def toutc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
-   
-    anchor = db.query(StopArrivalAnchors).filter(
-        StopArrivalAnchors.stop_id == stop_id,
-        StopArrivalAnchors.route_id == route_id
-    ).order_by(StopArrivalAnchors.updated_at.desc()).first()
+    async def get_recent_user_events(
+        self,
+        route_id: str,
+        stop_id: str,
+        limit: int = 10,
+        cutoff_minutes: int = 40) -> List[Dict]:
 
-    use_anchor = anchor and (now - anchor.last_reported_at).total_seconds() < 3600  # valid < 1 hour
-
-    if use_anchor:
-        predicted_time = anchor.best_arrival_time
-        confidence = anchor.confidence
-        source = "live_scraped"
-        logger.debug(f"Using scraped anchor for {route_id} @ {stop_id} → {predicted_time} (conf {confidence})")
-    else:
-      
-        past_arrivals = get_user_journeys(
-            db=db,
+        
+        events = await self.event_repo.GetRecentEventsByRouteAndStop(
             route_id=route_id,
             stop_id=stop_id,
-            limit=10
+            limit=limit,
+            cutoff_minutes=cutoff_minutes,
         )
+        result = []
+        for ev in events:
+            arrival_time = self.toutc(ev.reported_time or ev.created_at)
+            result.append({"type": ev.type, "time": arrival_time})
+        return result
 
-        recent_events = get_recent_user_events(
-            db=db,
+    async def get_prediction(
+        self,
+        route_id: str,
+        target_stop_id: str,
+        planned_start_time: datetime,
+        now: Optional[datetime] = None) -> tuple[Optional[datetime], float]:
+
+        if now is None:
+            now = datetime.now(timezone.utc)
+
+        # 1. Fresh anchor
+        anchor = await self.prediction_repo.GetLatestAnchor(route_id, target_stop_id)
+        used_anchor = False
+        used_historical = False
+        base_time = planned_start_time
+
+        if anchor and (now - anchor.updated_at < timedelta(minutes=60)):
+            base_time = anchor.best_arrival_time
+            used_anchor = True
+            confidence = anchor.confidence or 0.80
+            return base_time, min(0.98, confidence)
+
+        # 2. Historical fallback
+        hist_delay = await self.prediction_repo.GetHistoricalDelay(
+            route_id, target_stop_id, base_time
+        )
+        if hist_delay is not None:
+            base_time += timedelta(minutes=hist_delay)
+            used_historical = True
+
+        # 3. Recent user events
+        recent_events = await self.get_recent_user_events(
             route_id=route_id,
-            stop_id=stop_id
+            stop_id=target_stop_id,
+            limit=10,
         )
 
-        static_time = static_dt.time() if isinstance(static_dt, datetime) else static_dt
+        # 4. Past arrivals
+        past_arrivals = await self.journey_repo.GetRecentArrivedJourneys(
+            route_id=route_id,
+            stop_id=target_stop_id,
+            limit=10,
+            now=now
+        )
 
+        # 5. Core prediction
+        static_time = base_time.time() if isinstance(base_time, datetime) else base_time
         try:
             predicted_time, confidence = predict_bus_time(
                 static_time=static_time,
                 user_events=recent_events,
                 past_arrivals=past_arrivals,
-                now=now
+                now=now,
             )
         except Exception as e:
-            logger.error(f"predict_bus_time failed: {e}", exc_info=True)
-            predicted_time = static_dt or (now + timedelta(minutes=15))
+            self.logger.error(f"predict_bus_time failed: {e}", exc_info=True)
+            predicted_time = base_time or (now + timedelta(minutes=15))
             confidence = 0.15
 
-        source = _prediction_source(past_arrivals, recent_events, static_dt, anchor_exists=False)
+        # 6. Delay penalty
+        delays = sum(1 for e in recent_events if e["type"] == "DELAYED")
+        if delays >= 1:
+            extra_min = 4 + delays * 3.5
+            predicted_time += timedelta(minutes=extra_min)
+            confidence = min(0.95, confidence + 0.15)
 
- 
-   
-    delays = sum(1 for e in recent_events if e["type"] == "DELAYED")
-    if delays >= 1:
-        extra_min = 4 + delays * 3.5
-        predicted_time += timedelta(minutes=extra_min)
-        confidence = min(0.95, confidence + 0.15)
+        # 7. Boost confidence
+        if used_anchor:
+            confidence = min(1.0, confidence + 0.15)
+        elif used_historical:
+            confidence = min(0.85, confidence + 0.05)
 
-    # Safety net: never show past time
-    if predicted_time < now:
-        predicted_time = now + timedelta(minutes=3)
-    
-    return {
-        "predicted_arrival": predicted_time.isoformat() if predicted_time else None,
-        "confidence": round(confidence, 2),
-        "source": source,
-        "event_count": len(recent_events),
-        "historical_count": len(past_arrivals),
-    }
+        confidence = max(0.25, min(0.98, confidence))
+
+        # Safety net
+        if predicted_time < now:
+            predicted_time = now + timedelta(minutes=3)
+
+        return predicted_time, round(confidence, 2)
