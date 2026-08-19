@@ -30,3 +30,25 @@ class RouteRepository(BaseRepository):
         joinedload(RouteStop.stop)).where(RouteStop.route_id == route_id).order_by(RouteStop.sequence)
         result = await self.db.execute(stmt)
         return result.scalars().all() 
+
+    async def GetRouteStopsForStop(self, stop_id: str):
+        
+        stmt = select(RouteStop).where(RouteStop.stop_id == stop_id)
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def GetRouteStopsInOrder(self, route_id: str):
+
+        stmt = (
+            select(RouteStop)
+            .where(RouteStop.route_id == route_id)
+            .order_by(RouteStop.sequence)
+        )
+        result = await self.db.execute(stmt)
+        return result.scalars().all()
+
+    async def GetStopById(self, stop_id: str):
+
+        stmt = select(Stop).where(Stop.id == stop_id)
+        result = await self.db.execute(stmt)
+        return result.scalar_one_or_none()

@@ -8,6 +8,7 @@ from app.repositories.router_repository import RouteRepository
 from app.repositories.journey_repository import JourneyRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.repositories.snapshot_repository import SnapshotRepository
+from app.repositories.leaderboard_repository import LeaderboardRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.push_subscription_repository import PushSubscriptionRepository
 from app.Services.auth import AuthService
@@ -15,6 +16,11 @@ from app.Services.v2.prediction.prediction_service import PredictionService
 from app.Services.journeyService.journey_service import JourneyService
 from app.Services.journeyService.eventHandler import JourneyEventHandler
 
+
+
+
+async def get_leaderboard_repository(db: AsyncSession = Depends(get_db)) -> LeaderboardRepository:
+    return LeaderboardRepository(db)
 
 def get_auth_service(db: AsyncSession = Depends(get_db)):
     repo = UserRepository(db)

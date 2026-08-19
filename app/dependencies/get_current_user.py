@@ -1,62 +1,97 @@
-import app.core.security as security
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+import jwt
+from datetime import datetime, timezone, timedelta
 
 from app.core.Database import get_db
 from app.models.User import User
+from app.repositories.user_repository import UserRepository
+from app.core.config import Config
 
-bearer_scheme = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
-@staticmethod
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
-    db: Session = Depends(get_db)) -> User:
 
-    """
-    Validate the Bearer token and return the authenticated User.
-    Raise 401 if the token is missing, expired, or invalid.
-    """
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)):
+   
+    if not credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
     token = credentials.credentials
-    payload = security.verify_web_token(token)
-
-    if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token is invalid or has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user_id: str = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token payload is malformed",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User no longer exists",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    return user
-
-
-def get_current_user_optional(
-    credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer(auto_error=False)),
-    db: Session = Depends(get_db)) -> User | None:
-    """
-    Like get_current_user but returns None instead of raising for unauthenticated
-    requests.
-    """
-    if credentials is None:
-        return None
+    
     try:
-        return get_current_user(credentials, db)
-    except HTTPException:
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=[Config.ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        user_repo = UserRepository(db)
+        user = await user_repo.GetUserByID(user_id)
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return user
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token expired",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)):
+    
+    if not credentials:
         return None
+    
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=[Config.ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        
+        user_repo = UserRepository(db)
+        user = await user_repo.GetUserByID(user_id)
+        return user
+        
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return None
+
+
+def create_access_token(user_id: str, expires_delta: timedelta = None):
+    """Create a JWT access token."""
+    if expires_delta is None:
+        expires_delta = timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    payload = {
+        "sub": user_id,
+        "exp": datetime.now(timezone.utc) + expires_delta,
+        "iat": datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, Config.SECRET_KEY, algorithm=Config.ALGORITHM)

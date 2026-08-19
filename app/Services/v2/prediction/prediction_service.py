@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.prediction_repository import PredictionRepository
 from app.repositories.event_repository import EventRepository
 from app.repositories.journey_repository import JourneyRepository
-from app.Services.Prediction.logic import predict_bus_time  # adjust import
+from app.Services.Prediction.logic import predict_bus_time 
 from app.utils.logger.logger import get_logger
 
 
