@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from app.core.Database import get_db
 from app.models.User import User
 from app.repositories.user_repository import UserRepository
-from app.core.config import Config
+from app.core.config import config  
 
 security = HTTPBearer(auto_error=False)
 
@@ -16,7 +16,7 @@ security = HTTPBearer(auto_error=False)
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)):
-   
+
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -27,7 +27,7 @@ async def get_current_user(
     token = credentials.credentials
     
     try:
-        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=[Config.ALGORITHM])
+        payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(
@@ -37,7 +37,7 @@ async def get_current_user(
             )
         
         user_repo = UserRepository(db)
-        user = await user_repo.GetUserByID(user_id)
+        user = await user_repo.GetuserById(user_id)
         
         if not user:
             raise HTTPException(
@@ -65,19 +65,19 @@ async def get_current_user(
 async def get_current_user_optional(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)):
-    
+
     if not credentials:
         return None
     
     try:
         token = credentials.credentials
-        payload = jwt.decode(token, Config.SECRET_KEY, algorithms=[Config.ALGORITHM])
+        payload = jwt.decode(token, config.SECRET_KEY, algorithms=[config.ALGORITHM])
         user_id = payload.get("sub")
         if not user_id:
             return None
         
         user_repo = UserRepository(db)
-        user = await user_repo.GetUserByID(user_id)
+        user = await user_repo.GetuserById(user_id)
         return user
         
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
@@ -85,13 +85,13 @@ async def get_current_user_optional(
 
 
 def create_access_token(user_id: str, expires_delta: timedelta = None):
-    """Create a JWT access token."""
+
     if expires_delta is None:
-        expires_delta = timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_delta = timedelta(minutes=config.ACCESS_TOKEN_EXPIRE_MINUTES)
     
     payload = {
         "sub": user_id,
         "exp": datetime.now(timezone.utc) + expires_delta,
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, Config.SECRET_KEY, algorithm=Config.ALGORITHM)
+    return jwt.encode(payload, config.SECRET_KEY, algorithm=config.ALGORITHM)

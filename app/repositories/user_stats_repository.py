@@ -8,7 +8,7 @@ class UserStatsRepository(BaseRepository):
     def __init__(self, db: AsyncSession):
         super().__init__(db)
 
-    async def GetUserStats(self, user_id: str) -> UserStats | None:
+    async def GetUserStats(self, user_id: str):
         result = await self.db.execute(select(UserStats).where(UserStats.user_id == user_id))
         return result.scalar_one_or_none()
 
@@ -21,4 +21,11 @@ class UserStatsRepository(BaseRepository):
     async def UpdateUserStats(self, stats: UserStats):
         await self.db.commit()
         await self.db.refresh(stats)
+        return stats
+
+    async def GetOrCreateUserStats(self, user_id: str):
+        stats = await self.GetUserStats(user_id)
+        if not stats:
+            stats = UserStats(user_id=user_id)
+            stats = await self.CreateUserStats(stats)
         return stats
