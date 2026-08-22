@@ -1,6 +1,5 @@
 from datetime import datetime, timezone, timedelta, UTC
 from uuid import uuid4
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.Route import Route, Stop
@@ -15,6 +14,7 @@ from app.routers.Broadcast import broadcast_service_update
 from app.repositories.router_repository import RouteRepository
 from app.repositories.journey_repository import JourneyRepository
 from app.repositories.snapshot_repository import SnapshotRepository
+from app.exceptions.exceptions import JourneyStartFailed, RouteNotFoundError
 
 logger = get_logger(__name__)
 
@@ -24,7 +24,7 @@ class JourneyService:
         route_repo: RouteRepository,
         prediction_service: PredictionService,
         journey_repo: JourneyRepository,
-        snapshot_repo: SnapshotRepository,
+        snapshot_repo: SnapshotRepository
     ):
         self.route_repo = route_repo
         self.pred_svc = prediction_service
@@ -35,17 +35,16 @@ class JourneyService:
 
         route = await self.route_repo.GetRouteID(data.route_id)
         if not route:
-            raise ValueError(f"Route {data.route_id} not found")
+            raise RouteNotFoundError(detail=f"Route {data.route_id} not found")
 
         start_stop = await self.route_repo.GetStartStopID(data.start_stop_id)
         if not start_stop:
-            raise ValueError(f"Start stop {data.start_stop_id} not found")
+            raise RouteNotFoundError(detail=f"Start stop {data.start_stop_id} not found")
 
-        end_stop = None
         if data.end_stop_id:
             end_stop = await self.route_repo.GetEndStopID(data.end_stop_id)
             if not end_stop:
-                raise ValueError(f"End stop {data.end_stop_id} not found")
+                raise RouteNotFoundError(detail=f"End stop {data.end_stop_id} not found")
 
         planned = data.planned_start_time or datetime.now(timezone.utc)
         if planned.tzinfo is None:
@@ -97,8 +96,12 @@ class JourneyService:
             predicted_arrival=eta,
             confidence=confidence
         )
-       
-        await self.journey_repo.AddJourney(journey)
+
+        try:
+            await self.journey_repo.AddJourney(journey)
+        except Exception as e:
+            logger.error(f"Failed to save journey: {e}")
+            raise JourneyStartFailed(detail="Failed to save journey to database")
 
         try:
             snapshot = PredictionSnapshot(

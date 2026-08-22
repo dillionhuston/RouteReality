@@ -1,7 +1,5 @@
 from uuid import uuid4
-from datetime import datetime, timezone, timedelta, date
-from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone, date
 
 from app.repositories.journey_repository import JourneyRepository
 from app.repositories.event_repository import EventRepository
@@ -12,6 +10,7 @@ from app.models.UserStats import UserStats
 from app.utils.logger.logger import get_logger
 from app.routers.Broadcast import broadcast_service_update
 from app.Services.push_service.push_service import send_notifications_to_service
+from app.exceptions.exceptions import JourneyError, NoActiveJourney, PushNotificationFailed, WebsocketBroadcastFailed
 
 logger = get_logger(__name__)
 
@@ -31,37 +30,36 @@ class JourneyEventHandler:
         event_type: str,
         journey_id: str,
         user_id: str):
-        
+
         handlers = {
             "ARRIVED": self._handle_arrived,
             "DELAYED": self._handle_delayed,
             "STOP_REACHED": self._handle_stop_reached,
         }
-
         handler = handlers.get(event_type)
         if handler is None:
             logger.warning(f"Unsupported event type: {event_type}")
-            raise HTTPException(400, f"Unsupported event type: {event_type}")
+            raise JourneyError(detail=f"Unsupported event type: {event_type}", status_code=400)
         return await handler(journey_id, user_id)
 
     async def _handle_arrived(self, journey_id: str, user_id: str):
 
         journey = await self.journey_repo.GetActiveJourney(journey_id)
         if not journey:
-            raise HTTPException(404, f"Journey {journey_id} not found")
+            raise NoActiveJourney(detail=f"Journey {journey_id} not found")
         if journey.status not in ["STARTED", "DELAYED"]:
-            raise HTTPException(400, f"Cannot mark as ARRIVED from status: {journey.status}")
+            raise JourneyError(detail=f"Cannot mark as ARRIVED from status: {journey.status}", status_code=400)
 
         journey = await self.journey_repo.UpdateJourneyStatus(journey, "ARRIVED")
 
         now = datetime.now(timezone.utc)
         event = Event(
-            id=str(uuid4()),                          
+            id=str(uuid4()),
             journey_id=journey_id,
             type="ARRIVED",
             stop_id=journey.start_stop_id,
             user_id=user_id,
-            reported_time=now,                       
+            reported_time=now,
             created_at=now,
         )
         await self.event_repo.CreateEvent(event)
@@ -76,20 +74,20 @@ class JourneyEventHandler:
 
         journey = await self.journey_repo.GetActiveJourney(journey_id)
         if not journey:
-            raise HTTPException(404, f"Journey {journey_id} not found")
+            raise NoActiveJourney(detail=f"Journey {journey_id} not found")
         if journey.status not in ["STARTED", "ARRIVED"]:
-            raise HTTPException(400, f"Cannot mark as DELAYED from status: {journey.status}")
+            raise JourneyError(detail=f"Cannot mark as DELAYED from status: {journey.status}", status_code=400)
 
         journey = await self.journey_repo.AddDelay(journey, 10)
 
         now = datetime.now(timezone.utc)
         event = Event(
-            id=str(uuid4()),                         
+            id=str(uuid4()),
             journey_id=journey_id,
             type="DELAYED",
             stop_id=journey.start_stop_id,
             user_id=user_id,
-            reported_time=now,                      
+            reported_time=now,
             created_at=now,
         )
         await self.event_repo.CreateEvent(event)
@@ -104,9 +102,9 @@ class JourneyEventHandler:
 
         journey = await self.journey_repo.GetActiveJourney(journey_id)
         if not journey:
-            raise HTTPException(404, f"Journey {journey_id} not found")
+            raise NoActiveJourney(detail=f"Journey {journey_id} not found")
         if journey.status not in ["ARRIVED", "DELAYED"]:
-            raise HTTPException(400, f"Cannot mark stop reached from status: {journey.status}")
+            raise JourneyError(detail=f"Cannot mark stop reached from status: {journey.status}", status_code=400)
 
         journey = await self.journey_repo.UpdateJourneyStatus(journey, "STOP_REACHED", ended_at=datetime.now(timezone.utc))
 
@@ -117,7 +115,7 @@ class JourneyEventHandler:
             type="STOP_REACHED",
             stop_id=journey.end_stop_id or journey.start_stop_id,
             user_id=user_id,
-            reported_time=now,                      
+            reported_time=now,
             created_at=now,
         )
         await self.event_repo.CreateEvent(event)
@@ -158,7 +156,6 @@ class JourneyEventHandler:
             stats.streak_best = stats.streak_current
         stats.last_report_date = today
 
-        #TODO I HAVE TO MOVE THIS INTO A SERVICE, JUST DONE THIS TO GET IT DONE FAST 
         badges = set(stats.earned_badges.split(',') if stats.earned_badges else [])
         if stats.total_reports == 1:
             badges.add("first_report")
@@ -186,17 +183,19 @@ class JourneyEventHandler:
         predicted = journey.predicted_arrival
         if predicted and predicted.tzinfo is None:
             predicted = predicted.replace(tzinfo=timezone.utc)
-        
+
         payload = {
             "current_status": status,
             "predicted_arrival": predicted.isoformat() if predicted else None,
             "minutes_remaining": max(0, int((predicted - datetime.now(timezone.utc)).total_seconds() / 60)) if predicted else None,
             "message": body,
         }
+
         try:
             await broadcast_service_update(journey.service_id, payload)
         except Exception as e:
             logger.warning(f"Broadcast failed: {e}")
+            raise WebsocketBroadcastFailed(detail=str(e))
 
         try:
             url = f"/tracking?journey={journey.id}"
@@ -209,3 +208,4 @@ class JourneyEventHandler:
             )
         except Exception as e:
             logger.warning(f"Push notification failed: {e}")
+            raise PushNotificationFailed(detail=str(e))
