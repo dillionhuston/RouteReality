@@ -14,6 +14,9 @@ from app.dependencies.get_current_user import get_current_user_optional
 from app.models.User import User
 from app.dependencies.dependency import get_journey_service, get_journey_event_handler
 
+from app.exceptions.exceptions import JourneyError, WebsocketBroadcastFailed, JourneyStartFailed,PushNotificationFailed, NoActiveJourney
+
+
 logger = get_logger(__name__)
 
 COOLDOWN_SECONDS = 180
@@ -28,24 +31,24 @@ async def start_journey(
     service: JourneyService = Depends(get_journey_service)):
 
     if not journey.start_stop_id or not journey.end_stop_id:
-        raise HTTPException(
-            status_code=400,
+        raise JourneyError(
             detail="Need both start and end stop to begin journey"
         )
     try:
         new_j = await service.start_journey(data=journey)
         if new_j is None:
-            raise ValueError("JourneyService returned None")
+            raise JourneyError("JourneyService returned None")
         logger.info(f"New journey started: {new_j['journey_id']} route={journey.route_id}")
         return new_j
+    
     except HTTPException:
-        raise
+        raise JourneyError
     except ValueError as ve:
         logger.error(f"Failed to start journey: {ve}")
-        raise HTTPException(status_code=500, detail=str(ve))
+        raise JourneyError(detail=str(ve))
     except Exception as e:
         logger.error(f"Unexpected error starting journey: {e}")
-        raise HTTPException(status_code=500, detail="Could not start journey due to server error")
+        raise JourneyStartFailed(status_code=500, detail="Could not start journey due to server error")
 
 
 @router.post("/{journey_id}/event")
@@ -67,7 +70,7 @@ async def add_journey_event(
 
     if not updated:
         logger.warning(f"Couldn't find active journey for {journey_id}")
-        raise HTTPException(status_code=404, detail="Journey not found or already finished")
+        raise NoActiveJourney(detail="Journey not found or already finished")
 
     logger.info(f"Added {event.event} to journey {journey_id}")
 
@@ -95,6 +98,7 @@ async def add_journey_event(
                 logger.warning(f"No service_id/route_id found for journey {journey_id}, cannot send push")
     except Exception as e:
         logger.error(f"Failed to send push notifications for journey {journey_id}: {e}")
+        raise NoActiveJourney(detail ="No service_id/route_id found for journey {journey_id}, cannot send push")
 
     try:
         minutes_remaining = None
@@ -112,6 +116,7 @@ async def add_journey_event(
         await broadcast_service_update(updated.service_id, payload)
     except Exception as e:
         logger.error(f"WebSocket broadcast failed: {e}")
+        raise WebsocketBroadcastFailed(detail="WebSocket broadcast failed: {e}")
 
     return {
         "journey_id": str(updated.id),

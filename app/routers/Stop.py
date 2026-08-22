@@ -1,12 +1,12 @@
 from datetime import datetime, timezone, timedelta
 import random
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends
 
 from app.core.Database import get_db
 from app.repositories.router_repository import RouteRepository
 from app.dependencies.dependency import get_route_repository
 from app.schemas.route import RouteAtStop
+from app.exceptions.exceptions import RouteNotFoundError
 
 router = APIRouter(prefix="/stops", tags=["Stops"])
 
@@ -18,7 +18,7 @@ async def get_routes_for_stop(
 
     route_stops = await route_repo.GetRouteStopsForStop(stop_id)
     if not route_stops:
-        raise HTTPException(404, "No routes serve this stop")
+        raise RouteNotFoundError(detail="No routes serve this stop")
 
     result = []
     for rs in route_stops:
@@ -37,9 +37,10 @@ async def get_routes_for_stop(
 async def get_arrivals_for_stop(
     stop_id: str,
     route_repo: RouteRepository = Depends(get_route_repository)):
+
     route_stops = await route_repo.GetRouteStopsForStop(stop_id)
     if not route_stops:
-        raise HTTPException(404, "No routes serve this stop")
+        raise RouteNotFoundError(detail="No routes serve this stop")
 
     now = datetime.now(timezone.utc)
     arrivals = []

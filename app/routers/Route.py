@@ -1,14 +1,13 @@
 from typing import List
-from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends
 
-from app.core.Database import get_db
 from app.repositories.router_repository import RouteRepository
 from app.schemas.route import StopsPerRoute, RouteOut
 from app.utils.logger import logger
 from app.dependencies.get_current_user import get_current_user_optional
 from app.models.User import User
 from app.dependencies.dependency import get_route_repository
+from app.exceptions.exceptions import RouteNotFoundError
 
 router = APIRouter(prefix="/route", tags=["Routes"])
 logger = logger.get_logger()
@@ -18,14 +17,13 @@ logger = logger.get_logger()
 async def get_routes(
     repo: RouteRepository = Depends(get_route_repository),
     current_user: User = Depends(get_current_user_optional)):
-    """
-    Return all routes with first stop lat/lon for dropdowns or maps.
-    """
+
+    """Return all routes with first stop lat/lon for dropdowns or maps."""
     routes = await repo.GetRoutesWithStops()
 
     if not routes:
         logger.warning("No routes in database")
-        raise HTTPException(404, "No routes available")
+        raise RouteNotFoundError(detail="No routes available")
 
     result = []
     for r in routes:
@@ -52,11 +50,11 @@ async def get_stops_per_route(
     repo: RouteRepository = Depends(get_route_repository),
     current_user: User = Depends(get_current_user_optional)):
 
-    """Returns stops for a route"""
+    """Returns stops for a route."""
     stops = await repo.GetStopsByRoute(route_id)
 
     if not stops:
-        raise HTTPException(404, f"No stops for route '{route_id}'")
+        raise RouteNotFoundError(detail=f"No stops for route '{route_id}'")
 
     result = []
     seen_seq = set()

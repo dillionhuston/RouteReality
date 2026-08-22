@@ -1,17 +1,15 @@
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timezone
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.Database import get_db
 from app.repositories.journey_repository import JourneyRepository
 from app.repositories.router_repository import RouteRepository
 from app.dependencies.dependency import get_journey_repository, get_route_repository
+from app.exceptions.exceptions import JourneyNotFoundError, RouteNotFoundError
 
 router = APIRouter(prefix="/journeys/status", tags=["Journey Status"])
 
 
 def ensure_timezone_aware(dt: datetime | None) -> datetime | None:
-    """Ensure datetime is timezone-aware (UTC)."""
     if dt is None:
         return None
     if dt.tzinfo is None:
@@ -20,7 +18,6 @@ def ensure_timezone_aware(dt: datetime | None) -> datetime | None:
 
 
 def minutes_left(pred: datetime | None) -> int | None:
-    """Return minutes remaining until predicted arrival, or None if invalid."""
     if not pred:
         return None
     try:
@@ -38,11 +35,11 @@ def minutes_left(pred: datetime | None) -> int | None:
 async def journey_status(
     journey_id: str,
     journey_repo: JourneyRepository = Depends(get_journey_repository),
-    route_repo: RouteRepository = Depends(get_route_repository),
-) -> dict:
+    route_repo: RouteRepository = Depends(get_route_repository)) -> dict:
+
     journey = await journey_repo.GetJourneyById(journey_id)
     if not journey:
-        raise HTTPException(404, f"Journey {journey_id} not found")
+        raise JourneyNotFoundError(detail=f"Journey {journey_id} not found")
 
     route = await route_repo.GetRouteID(journey.route_id)
     destination = None
@@ -51,7 +48,6 @@ async def journey_status(
         if dest_stop:
             destination = dest_stop.name
 
-    # Make predicted_arrival timezone-aware before calculation
     predicted = ensure_timezone_aware(journey.predicted_arrival)
     minutes_remaining = None
     if predicted:
@@ -79,8 +75,8 @@ async def journeys_for_stop(
     stop_id: str,
     journey_repo: JourneyRepository = Depends(get_journey_repository),
     limit: int = Query(100, ge=1, le=500),
-    hours: int = Query(24, ge=1, le=168),
-) -> dict:
+    hours: int = Query(24, ge=1, le=168)) -> dict:
+
     journeys, total, active = await journey_repo.GetJourneysForStop(stop_id, limit, hours)
 
     return {
@@ -108,11 +104,11 @@ async def single_route(
     route_id: str,
     journey_repo: JourneyRepository = Depends(get_journey_repository),
     route_repo: RouteRepository = Depends(get_route_repository),
-    limit: int = Query(50, ge=1, le=200),
-) -> dict:
+    limit: int = Query(50, ge=1, le=200))->dict:
+
     route = await route_repo.GetRouteID(route_id)
     if not route:
-        raise HTTPException(404, f"Route '{route_id}' not found")
+        raise RouteNotFoundError(detail=f"Route '{route_id}' not found")
 
     latest = await journey_repo.GetLatestJourneyByRoute(route_id)
     total_today = await journey_repo.GetRouteJourneyCountToday(route_id)
@@ -145,7 +141,7 @@ async def get_active_journeys(
     journey_repo: JourneyRepository = Depends(get_journey_repository),
     route_repo: RouteRepository = Depends(get_route_repository),
     limit: int = Query(20, ge=1, le=50)):
-    
+
     journeys = await journey_repo.GetActiveJourneys(limit)
 
     result = []
