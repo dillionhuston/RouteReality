@@ -82,3 +82,11 @@ class RouteNotFoundError(ServiceError):
 class JourneyNotFoundError(ServiceError):
     def __init__(self, detail: str = "Journey not found."):
         super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
+
+class AnchorUpdateError(ServiceError):
+    def __init__(self, detail: str = "Failed to update arrival anchor."):
+        super().__init__(detail=detail, status_code=500)
+
+class IncorrectPasswordError(ServiceError):
+    def __init__(self, detail: str = "Incorrect password."):
+        super().__init__(detail=detail, status_code=status.HTTP_401_UNAUTHORIZED)

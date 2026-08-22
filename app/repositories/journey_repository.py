@@ -164,3 +164,9 @@ class JourneyRepository(BaseRepository):
         )
         result = await self.db.execute(stmt)
         return result.scalars().all()
+
+
+    async def UpdateJourney(self, journey: Journey):
+        await self.db.commit()
+        await self.db.refresh(journey)
+        return journey

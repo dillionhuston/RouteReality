@@ -1,17 +1,17 @@
 from uuid import uuid4
 from app.models.PredictionSnapshot import PredictionSnapshot
-from sqlalchemy.orm import Session
+from app.repositories.snapshot_repository import SnapshotRepository
+from app.exceptions.exceptions import ServiceError, DatabaseError
 from datetime import datetime, time, timezone
 
-class SnapshotService():
+
+class SnapshotService:
     
-    def __init__(self):
-        pass
+    def __init__(self, snapshot_repo: SnapshotRepository):
+        self.snapshot_repo = snapshot_repo
 
-
-    @staticmethod
-    def create_snapshot(
-            db: Session,
+    async def create_snapshot(
+            self,
             journey_id: str,
             service_id: str,
             stop_id: str,
@@ -20,21 +20,19 @@ class SnapshotService():
             best_trusted_arrival: datetime,
             predicted_arrival: datetime,
             confidence: float
-
     ):
         snapshot = PredictionSnapshot(
-        id=str(uuid4()),
-        journey_id = journey_id,
-        service_id = service_id,
-        stop_id = stop_id,
-        user_reported_arrival = user_reported_arrival,
-        static_scheduled = static_scheduled,
-        best_trusted_arrival = best_trusted_arrival,
-        predicted_arrival = predicted_arrival,
-        confidence = confidence
+            id=str(uuid4()),
+            journey_id=journey_id,
+            service_id=service_id,
+            stop_id=stop_id,
+            user_reported_arrival=user_reported_arrival,
+            static_scheduled=static_scheduled,
+            best_trusted_arrival=best_trusted_arrival,
+            predicted_arrival=predicted_arrival,
+            confidence=confidence
         )
-        db.add(snapshot)
-        db.commit()
-        db.refresh(snapshot)
-        return snapshot
-
+        try:
+            return await self.snapshot_repo.CreateSnapshot(snapshot)
+        except Exception as e:
+            raise DatabaseError(detail=f"Failed to create prediction snapshot: {str(e)}")

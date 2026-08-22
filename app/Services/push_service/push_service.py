@@ -6,13 +6,13 @@ from pywebpush import webpush, WebPushException
 
 from app.models.PushSubscription import PushSubscription
 from app.repositories.push_subscription_repository import PushSubscriptionRepository
+from app.core.config import config
 
 logger = logging.getLogger(__name__)
 
-#TODO move to config
-VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY")
-VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY")
-VAPID_EMAIL = os.getenv("VAPID_EMAIL")
+VAPID_PUBLIC_KEY = config.VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY = config.VAPID_PRIVATE_KEY
+VAPID_EMAIL = config.VAPID_EMAIL
 
 if not VAPID_PRIVATE_KEY or not VAPID_EMAIL:
     logger.error("VAPID_PRIVATE_KEY and VAPID_EMAIL must be set in .env")
@@ -24,7 +24,7 @@ def send_push_notification(
     subscription: PushSubscription,
     title: str,
     body: str,
-    url: str = "/") -> bool:
+    url: str = "/"):
     """Send push to a single subscription. Returns True on success."""
     try:
         webpush(
@@ -37,9 +37,9 @@ def send_push_notification(
                 "body": body,
                 "url": url,
             }),
-            vapid_private_key=VAPID_PRIVATE_KEY,
+            vapid_private_key=config.VAPID_PRIVATE_KEY,
             vapid_claims=VAPID_CLAIMS,
-            ttl=86400,  # 24 hours
+            ttl=86400,
         )
         logger.debug(f"Push sent successfully to subscription {subscription.id[:8]}...")
         return True
@@ -62,7 +62,7 @@ async def send_notifications_to_service(
     service_id: str,
     title: str,
     body: str,
-    url: str = "/") -> int:
+    url: str = "/"):
     """
     Send push notification to all subscribers of a service_id.
     Automatically removes dead subscriptions.

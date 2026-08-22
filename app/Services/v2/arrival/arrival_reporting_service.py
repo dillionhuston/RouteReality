@@ -8,6 +8,14 @@ from app.utils.fetch_time import get_closest_scheduled_time_to_now
 from app.Services.v2.anchor.best_arrival_anchor_service import BestArrivalAnchorService
 from app.Services.v2.snapshot.snapshot import SnapshotService
 from app.routers.Broadcast import broadcast_service_update
+from app.repositories.journey_repository import JourneyRepository
+from app.repositories.snapshot_repository import SnapshotRepository
+from app.exceptions.exceptions import (
+    JourneyNotFoundError,
+    ServiceError,
+    DatabaseError,
+    AnchorUpdateError,
+)
 
 
 class ArrivalReportingService:
@@ -22,10 +30,16 @@ class ArrivalReportingService:
     status transitions are the sole responsible in JourneyEventHandler.
     """
 
+    def __init__(self, journey_repo: JourneyRepository, snapshot_repo: SnapshotRepository):
+        self.journey_repo = journey_repo
+        self.snapshot_repo = snapshot_repo
+        self.snapshot_service = SnapshotService(snapshot_repo)
+
     @staticmethod
     def _decide_best_time(
         reported_time: datetime,
-        static_datetime: datetime | None,) -> Tuple[datetime, float, str]:
+        static_datetime: datetime | None,
+    ) -> Tuple[datetime, float, str]:
 
         if static_datetime is None:
             return reported_time, 0.70, "No static timetable data"
@@ -40,31 +54,39 @@ class ArrivalReportingService:
 
         return static_datetime, 0.40, "Large deviation — using timetable"
 
-    @staticmethod
     async def handle_arrival_report(
+        self,
         db: Session,
         journey_id: str,
         stop_id: str,
-        reported_time: datetime,) -> Journey:
+        reported_time: datetime,
+    ) -> Journey:
 
         """
         Main entry point for arrival reporting.
         Records anchor + snapshot, writes prediction back to journey, broadcasts.
         Does not change journey.status.
         """
-        journey = db.query(Journey).filter(Journey.id == journey_id).first()
+        # 1. Get journey via repository
+        try:
+            journey = await self.journey_repo.GetJourneyById(journey_id)
+        except Exception as e:
+            raise DatabaseError(detail=f"Failed to retrieve journey: {str(e)}")
         if not journey:
-            raise ValueError(f"Journey {journey_id} not found")
+            raise JourneyNotFoundError(detail=f"Journey {journey_id} not found")
 
-        # 1. Get closest scheduled time
-        result = get_closest_scheduled_time_to_now(
-            route_id=journey.route_id,
-            stop_id=stop_id,
-            reference_time=reported_time,
-        )
+        # 2. Get closest scheduled time
+        try:
+            result = get_closest_scheduled_time_to_now(
+                route_id=journey.route_id,
+                stop_id=stop_id,
+                reference_time=reported_time,
+            )
+        except Exception as e:
+            raise ServiceError(detail=f"Failed to get scheduled time: {str(e)}")
         static_timetable = result[0] if result else None
 
-        # 2. Convert timetable time 
+        # 3. Convert timetable time 
         static_datetime = None
         if static_timetable:
             static_datetime = datetime.combine(
@@ -73,13 +95,13 @@ class ArrivalReportingService:
                 tzinfo=timezone.utc,
             )
 
-        # 3. Decide best time
-        best_time, confidence, reason = ArrivalReportingService._decide_best_time(
+        # 4. Decide best time
+        best_time, confidence, reason = self._decide_best_time(
             reported_time=reported_time,
             static_datetime=static_datetime,
         )
 
-        # 4. Make datetime
+        # 5. Make datetime
         if isinstance(best_time, time):
             best_datetime = datetime.combine(
                 reported_time.date(),
@@ -89,52 +111,59 @@ class ArrivalReportingService:
         else:
             best_datetime = best_time
 
-        # 5. Update/create shared anchor
+        # 6. Update/create shared anchor
         anchor_service = BestArrivalAnchorService()
-        anchor = anchor_service.update_or_create_anchor(
-            db=db,
-            service_id=journey.service_id,
-            stop_id=stop_id,
-            best_time=best_datetime,
-            confidence=confidence,
-            source="user_report",
-        )
+        try:
+            anchor = await anchor_service.update_or_create_anchor(
+                service_id=journey.service_id,
+                stop_id=stop_id,
+                best_time=best_datetime,
+                confidence=confidence,
+                source="user_report",
+            )
+        except Exception as e:
+            raise AnchorUpdateError(detail=f"Failed to update arrival anchor: {str(e)}")
 
-        # 6. Ssve prediction snapshot
-        snapshot_service = SnapshotService()
-        snapshot_service.create_snapshot(
-            db=db,
-            journey_id=journey.id,
-            service_id=journey.service_id,
-            stop_id=stop_id,
-            user_reported_arrival=reported_time,
-            static_scheduled=static_datetime,
-            best_trusted_arrival=best_datetime,
-            predicted_arrival=best_datetime,  # TODO: replace with PredictionService later
-            confidence=confidence,
-        )
+        # 7. Save prediction snapshot via service
+        try:
+            await self.snapshot_service.create_snapshot(
+                journey_id=journey.id,
+                service_id=journey.service_id,
+                stop_id=stop_id,
+                user_reported_arrival=reported_time,
+                static_scheduled=static_datetime,
+                best_trusted_arrival=best_datetime,
+                predicted_arrival=best_datetime,
+                confidence=confidence,
+            )
+        except Exception as e:
+            raise DatabaseError(detail=f"Failed to save prediction snapshot: {str(e)}")
 
+        # 8. Update journey via repository
         journey.predicted_arrival = best_datetime
         journey.confidence = confidence
-        db.add(journey)
+        try:
+            await self.journey_repo.UpdateJourney(journey)
+        except Exception as e:
+            raise DatabaseError(detail=f"Failed to update journey with new prediction: {str(e)}")
 
-        # 8. Single commit journey + anchor + snapshot automically
-        db.commit()
-        db.refresh(journey)
-
-        # 9. Update broadcast
-        await broadcast_service_update(
-            journey.service_id,
-            {
-                "type":              "arrival_update",
-                "journey_id":        journey.id,
-                "stop_id":           stop_id,
-                "predicted_arrival": best_datetime.isoformat(),
-                "confidence":        confidence,
-                "report_count":      anchor.report_count,
-                "timestamp":         datetime.now(timezone.utc).isoformat(),
-                "status":            journey.status,
-            },
-        )
+        # 9. Broadcast update
+        try:
+            await broadcast_service_update(
+                journey.service_id,
+                {
+                    "type":              "arrival_update",
+                    "journey_id":        journey.id,
+                    "stop_id":           stop_id,
+                    "predicted_arrival": best_datetime.isoformat(),
+                    "confidence":        confidence,
+                    "report_count":      anchor.report_count,
+                    "timestamp":         datetime.now(timezone.utc).isoformat(),
+                    "status":            journey.status,
+                },
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Broadcast failed: {e}")
 
         return journey
