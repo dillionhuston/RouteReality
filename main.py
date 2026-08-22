@@ -10,14 +10,20 @@ from app.routers.push import router as push_router
 from app.routers.Stop import router as stop_router
 from app.routers.Time import router as time_router
 from app.routers.Leaderboard import router as leaderboard_router
-from app.routers.User import router as user_roouter
+from app.routers.User import router as user_router
 
+
+from app.exceptions.exception_handler import service_exception_handler, unhandled_exception_handler
+from app.exceptions.exceptions import ServiceError
 
 app = FastAPI(
     title="Bus Tracker API",
     description="API for managing Belfast bus journeys, routes, and related data",
     version="1.3.0"
 )
+
+app.add_exception_handler(ServiceError, service_exception_handler)
+app.add_exception_handler(Exception, unhandled_exception_handler)
 
 # CORS configuration
 app.add_middleware(
@@ -37,7 +43,7 @@ app.include_router(push_router)
 app.include_router(stop_router)
 app.include_router(time_router)
 app.include_router(leaderboard_router)
-app.include_router(user_roouter)
+app.include_router(user_router)
 
 
 
