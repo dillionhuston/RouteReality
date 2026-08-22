@@ -4,4 +4,4 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-initdb.py
+initdb.pydev.db

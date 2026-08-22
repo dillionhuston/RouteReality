@@ -2,36 +2,98 @@
 
 **Live demo:** [https://routereality.co.uk](https://routereality.co.uk) – Community-powered bus predictions for Belfast & Northern Ireland.
 
-RouteReality is an open-source prediction engine that turns static timetables and real-world user events into accurate arrival estimates with confidence scores. It was built for public transit but can be adapted to any scheduled journey system: buses, trains, trams, ferries, campus shuttles, delivery fleets, or event transport.
 
-This repository shows the exact system running in Belfast – you can fork it and adapt it to your own city or use case.
+**RouteReality** is an open-source, community-powered journey tracking and public transport prediction engine.
 
-## What It Does
+It combines static timetables, historical journey data, and real-world passenger reports to produce live arrival estimates with confidence scores. The result is a transport experience that gets better as more people use it.
 
-The engine combines:
+This repository shows the exact system running in Belfast, you can fork it and adapt it to your own city or use case.
 
-- User-reported events (arrivals, delays, stops reached)
-- Historical journey data
-- Static timetable data (fallback)
 
-Recent reports are weighted more heavily. If no recent data exists, the system falls back to the static timetable.
+## Why RouteReality?
 
-Each prediction includes a **confidence score** based on:
+Traditional timetables tell you when a bus is *supposed* to arrive. RouteReality helps show when it is *likely* to arrive.
 
-- Number of recent events
-- Recency of events
-- Whether static data was used
+Passengers can report real-world events such as:
+- A bus arriving at a stop
+- A journey being delayed
+- A destination being reached
 
-## Key Features (V2)
+These reports are combined with historical data and timetable information to create better predictions for everyone.
 
-- **Improved prediction algorithm** – time-sensitive weighted average that handles traffic, weather, and time-of-day patterns.
-- **Stop-based arrivals** – see all upcoming buses at any stop.
-- **User stats and leaderboard** – track contributions and community rankings.
-- **Points system** – earn points for reporting events, helping the community, and improving predictions.
-- **JWT authentication** – secure protected routes while keeping basic read access open.
-- **Web push notifications** (VAPID) – users can receive real-time updates.
-- **WebSocket broadcasting** – live journey status changes.
-- **Event-driven architecture** – every user report improves predictions for everyone.
+The more people contribute, the more useful the system becomes.
+
+## Features
+
+### Real-time predictions
+
+RouteReality uses a time-sensitive weighted average to prioritise recent reports and account for real-world delay patterns caused by:
+
+- Traffic
+- Weather
+- School runs
+- Time of day
+- Public events
+- Recurring route delays
+
+### Community-powered data
+
+Every report helps improve future predictions. Users can contribute journey events and see their impact across the network.
+
+### Stop-based arrivals
+
+View upcoming buses at any stop, rather than being limited to a single tracked journey.
+
+### Confidence scores
+
+Every prediction includes a confidence score based on:
+
+- The number of recent reports
+- The age of those reports
+- The consistency of reported journey data
+- Whether the prediction uses community data or the static timetable fallback
+
+### Points and leaderboards
+
+Reward users for submitting useful, accurate journey information with points, badges, and community rankings.
+
+### Live updates
+
+WebSockets and web push notifications provide real-time journey status updates.
+
+### Secure authentication
+
+JWT authentication protects user actions while keeping basic route, stop, arrival, and leaderboard data publicly readable.
+
+### Adaptable architecture
+
+RouteReality can be adapted for:
+
+- Buses
+- Trains
+- Trams
+- Ferries
+- Campus shuttles
+- Event transport
+- Delivery fleets
+- Logistics systems
+
+---
+
+## How It Works
+
+RouteReality combines three sources of information:
+
+1. **Live user reports**  
+   Recent events such as arrivals, delays, and completed journeys.
+
+2. **Historical journey data**  
+   Previous journeys used to identify recurring route patterns.
+
+3. **Static timetable data**  
+   A reliable fallback when there is not enough recent community data.
+
+Recent reports receive the greatest weight. Older journey data provides additional context, while the timetable is used as the final fallback.
 
 ## Points & Leaderboard System
 
@@ -65,20 +127,8 @@ GET /users/stats          # Your personal stats
 GET /users/leaderboard    # Community leaderboard
 ```
 
-Points never expire. The system encourages frequent, accurate reporting – more data means better predictions for everyone.
+Points never expire. The system encourages frequent, accurate reporting, more data means better predictions for everyone.
 
-## Use Cases Beyond Belfast
-
-| Use case                      | What to change                        | Example                               |
-|-------------------------------|---------------------------------------|---------------------------------------|
-| Another city’s buses/trams    | Swap timetable importer               | Dublin, Glasgow, Manchester            |
-| Trains or ferries             | Support longer routes and dwell times | NI Railways or local ferries           |
-| University campus shuttles    | Smaller stop set + internal auth      | Any campus shuttle system              |
-| Delivery / logistics fleet    | Change terminology and ETA target     | Local courier or food delivery         |
-| Event shuttles                | Temporary routes and short-lived data | Festivals, sports events               |
-| Sensor + user hybrid          | Add IoT/GPS pings as event source     | Fleet with onboard GPS                 |
-
-Only the data importer and frontend labels usually need changing.
 
 ## Screenshots (Belfast UI)
 
@@ -128,7 +178,7 @@ alembic upgrade head
 ### Run the server
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn main:app --reload
 ```
 
 API is available at `http://localhost:8000`  
@@ -274,21 +324,6 @@ We welcome contributions – especially from developers who want to adapt RouteR
 
 Follow PEP 8, use type hints, and keep functions focused.
 
-### Running tests
-
-```bash
-pytest tests/
-```
-
-## Roadmap (post-V2)
-
-- Pluggable data importers for easier city adaptation
-- Multi-agency / multi-city support in one instance
-- Richer analytics dashboard
-- Deeper mobile / PWA integration
-- Official transit API integrations where available
-- Badge achievements (e.g., "Early Bird", "Daily Reporter", "Top Contributor")
-- Seasonal leaderboard resets with prizes
 
 ## License
 

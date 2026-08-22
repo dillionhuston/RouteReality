@@ -52,21 +52,18 @@ class InvalidTokenError(ServiceError):
         super().__init__(detail=detail, status_code=status.HTTP_401_UNAUTHORIZED)
 
 class JourneyError(ServiceError):
-    def __init__(self, detail: str = "Need both start and end stop to begin journey."):
-        super().__init__(detail=detail, status_code=status.HTTP_400_BAD_REQUEST)
-
-
+    def __init__(self, detail: str = "Journey error.", status_code: int = 400):
+        super().__init__(detail=detail, status_code=status_code)
 
 class JourneyStartFailed(ServiceError):
-    def __init__(self, detail: str = "Need both start and end stop to begin journey."):
-        super().__init__(detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    def __init__(self, detail: str = "Failed to start journey.", status_code: int = 500):
+        super().__init__(detail=detail, status_code=status_code)
 
 
 class NoActiveJourney(ServiceError):
-    def __init__(self, detail: str = "Need both start and end stop to begin journey."):
-        super().__init__(detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+    def __init__(self, detail: str = "No active journey found.", status_code: int = 404):
+        super().__init__(detail=detail, status_code=status_code)
+    
 class PushNotificationFailed(ServiceError):
     def __init__(self, detail: str = "Need both start and end stop to begin journey."):
         super().__init__(detail=detail, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -90,3 +87,7 @@ class AnchorUpdateError(ServiceError):
 class IncorrectPasswordError(ServiceError):
     def __init__(self, detail: str = "Incorrect password."):
         super().__init__(detail=detail, status_code=status.HTTP_401_UNAUTHORIZED)
+
+class UserNotFoundError(ServiceError):
+    def __init__(self, detail: str = "User not found."):
+        super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
